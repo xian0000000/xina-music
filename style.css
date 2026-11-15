@@ -1,0 +1,620 @@
+:root {
+  --bg: #ededeb; --card: #fff; --ink: #161616; --mute: #8a8a86;
+  --line: #e2e2de; --soft: #f3f3f1; --dash: #c4c4bf;
+  --acc: #161616; --onacc: #fff; --red: #e5483b;
+  --veil: rgba(237,237,235,.92); --plate-sh: rgba(0,0,0,.12);
+  --level: 0;
+  --en: 0; --hi: 0;            /* energi lagu (0-1): keseluruhan dan treble */
+  --mh: 335; --mh2: 312;       /* gradasi pink untuk glow, riak, not */
+  --sigil: rgba(22,22,22,.5);   /* hitam di tema terang */
+  --beam-l: 62%;                /* terang cahaya sorot */
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #050505; --card: #141414; --ink: #f2f2f2; --mute: #9a9a9a;
+    --line: #2a2a2a; --soft: #1e1e1e; --dash: #3a3a3a;
+    --acc: #f2f2f2; --onacc: #111;
+    --veil: rgba(5,5,5,.92); --plate-sh: rgba(0,0,0,.65);
+    --sigil: rgba(242,242,242,.55);   /* putih di tema gelap */
+  --beam-l: 78%;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #050505; --card: #141414; --ink: #f2f2f2; --mute: #9a9a9a;
+  --line: #2a2a2a; --soft: #1e1e1e; --dash: #3a3a3a;
+  --acc: #f2f2f2; --onacc: #111;
+  --veil: rgba(5,5,5,.92); --plate-sh: rgba(0,0,0,.65);
+  --sigil: rgba(242,242,242,.55);   /* putih di tema gelap */
+  --beam-l: 78%;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+html { overflow: hidden; }
+body {
+  height: 100vh; height: 100dvh;           /* satu layar penuh, tanpa scroll */
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 "Poppins", "Segoe UI", system-ui, sans-serif;
+  overflow: hidden;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  transition: background .5s, color .5s;
+  -webkit-font-smoothing: antialiased;
+}
+/* latar yang melayang pelan */
+body::before {
+  content: ""; position: fixed; inset: -30%; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 50%, hsl(var(--mh) 75% 58% / calc(var(--en) * .26)), transparent 46%),
+    radial-gradient(circle at 72% 34%, hsl(var(--mh2) 80% 60% / calc(var(--hi) * .2)), transparent 38%),
+    radial-gradient(circle at 30% 30%, rgba(128,128,128,.22), transparent 40%),
+    radial-gradient(circle at 75% 70%, rgba(128,128,128,.18), transparent 40%);
+  scale: calc(1 + var(--en) * .1);                     /* latar ikut bernapas */
+  animation: drift 18s ease-in-out infinite alternate;
+}
+@keyframes drift { to { transform: translate(6%, 4%) rotate(8deg); } }
+
+.app {
+  position: relative; z-index: 1;
+  height: 100%; max-width: 1100px; margin: 0 auto; padding: 0 14px 10px;
+  display: flex; flex-direction: column;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* masuk bertahap */
+.reveal { animation: up .7s cubic-bezier(.2,.8,.2,1) var(--d, 0s) backwards; }
+@keyframes up { from { opacity: 0; transform: translateY(26px) scale(.98); } }
+@keyframes pop { from { opacity: 0; transform: scale(.6) translateY(12px); } }
+
+/* ---------- header ---------- */
+.top { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 6px 4px; }
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--red); animation: beat 2.4s ease-in-out infinite; }
+@keyframes beat { 50% { transform: scale(1.5); opacity: .6; } }
+h1 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.25; }
+h1 small { display: block; color: var(--mute); font-size: 12px; font-weight: 400; }
+.acts { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.room { color: var(--mute); font-size: 12px; }
+.room b { color: var(--ink); font-weight: 600; }
+#theme, #chatBtn {
+  border: 1px solid var(--line); background: var(--soft); border-radius: 999px;
+  padding: 6px 14px; font-size: 13px;
+  transition: transform .25s, background .3s, border-color .3s;
+}
+#theme:hover, #chatBtn:hover { transform: scale(1.08) rotate(-3deg); }
+#theme:active, #chatBtn:active { transform: scale(.94); }
+
+/* ---------- panggung ---------- */
+.stage {
+  --px: 0; --py: 0;
+  position: relative;
+  flex: 1 1 0; min-height: 0;
+  container-type: size;
+  perspective: 1400px;
+}
+.l-seats { position: absolute; inset: 0; transition: transform .25s ease-out; }
+.l-seats {
+  --rx: min(41cqw, 41cqh); --ry: min(41cqw, 41cqh);   /* lingkaran sempurna */
+  --sw: clamp(30px, 4.4vw, 44px);
+  z-index: 2; transform: translate(calc(var(--px) * -12px), calc(var(--py) * -7px));
+  pointer-events: none;                 /* lapisan kursi tidak boleh menutupi alat musik */
+}
+.l-seats .seat { pointer-events: auto; }
+/* jam mekanik besar di luar: gir berputar bersama piringan, jarum mengikuti waktu asli */
+.l-sigil {
+  position: absolute; left: 50%; top: 50%; translate: -50% -50%;
+  width: 100cqmin; height: 100cqmin; overflow: visible;
+  color: var(--sigil); pointer-events: none;
+  animation: fade 1.4s .3s backwards;
+}
+.l-sigil .hand { transform-origin: 50px 50px; }   /* gerak jarum diatur dari app.js (stepClock) */
+
+/* efek tiap kursi saat user menekan layar: glow, riak, not (lapisan di belakang alat, tiap kursi punya titik sendiri) */
+.l-spot {
+  --rx: min(41cqw, 41cqh); --ry: min(41cqw, 41cqh);
+  --sw: clamp(30px, 4.4vw, 44px);
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  transform: translate(calc(var(--px) * -12px), calc(var(--py) * -7px));   /* ikut bergeser seperti kursi */
+  transition: transform .25s ease-out;
+  animation: fade 1.2s 1s backwards;
+}
+.l-spot .s-fx {
+  position: absolute; width: 0; height: 0;
+  left: calc(50% + var(--rx) * var(--c)); top: calc(50% + var(--ry) * var(--s));
+}
+.s-glow {
+  position: absolute; left: 0; top: 0; translate: -50% -50%;
+  width: calc(var(--sw) * 5); height: calc(var(--sw) * 5); border-radius: 50%;
+  background: radial-gradient(circle, hsl(var(--ph, 335) 60% 62% / .5) 0%, hsl(var(--ph, 335) 60% 62% / .16) 40%, transparent 68%);
+  animation: s-glow .9s ease-out both;
+}
+@keyframes s-glow { from { transform: scale(.4); opacity: 1; } to { transform: scale(1.15); opacity: 0; } }
+.s-ripple {
+  position: absolute; left: 0; top: 0; translate: -50% -50%;
+  width: calc(var(--sw) * 1.4); height: calc(var(--sw) * 1.4); border-radius: 50%;
+  border: 2px solid hsl(var(--ph, var(--mh)) 60% 62% / var(--o, .4));
+  animation: s-ripple 1.5s cubic-bezier(.2,.6,.3,1) forwards;
+}
+@keyframes s-ripple { from { transform: scale(1); opacity: 1; } to { transform: scale(3.3); opacity: 0; } }
+.s-note {
+  position: absolute; left: 0; top: 0; translate: -50% -50%;
+  font-size: var(--sz, 10px); line-height: 1; color: hsl(var(--ph, var(--mh)) 60% 56%);
+  animation: s-fly var(--dur, 2.2s) ease-out forwards;
+}
+@keyframes s-fly {
+  0% { transform: translate(calc(var(--x0) * var(--sw)), calc(var(--y0) * var(--sw))) rotate(0deg) scale(.7); opacity: .9; }
+  100% { transform: translate(calc(var(--x1) * var(--sw)), calc(var(--y1) * var(--sw))) rotate(var(--rot, 0deg)) scale(1); opacity: 0; }
+}
+
+/* cahaya di belakang alat: terang & warnanya ikut lagu */
+.l-glow {
+  position: absolute; left: 50%; top: 50%; translate: -50% -50%;
+  width: calc(100cqmin * .96); height: calc(100cqmin * .96); border-radius: 50%;
+  pointer-events: none;
+  background:
+    radial-gradient(circle, hsl(var(--mh) 85% 60% / calc(var(--en) * .5)) 0%, hsl(var(--mh) 85% 60% / calc(var(--en) * .18)) 38%, transparent 68%),
+    radial-gradient(circle at 65% 40%, hsl(var(--mh2) 85% 62% / calc(var(--hi) * .3)), transparent 50%);
+  scale: calc(.88 + var(--level) * .2);
+}
+
+/* riak tiap ketukan + not melayang: keluar dari balik alat */
+.l-fx { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.ripple {
+  position: absolute; left: 50%; top: 50%; translate: -50% -50%;
+  width: calc(100cqmin * .34); height: calc(100cqmin * .34);
+  border-radius: 50%;
+  border: 2px solid hsl(var(--ph, var(--mh)) 85% 62% / var(--o, .5));
+  animation: ripple 1.9s cubic-bezier(.42,.05,.3,1) forwards;
+}
+/* riak mulai dari titik di tengah (kelihatan bergelombang di lubang piringan), lalu melebar ke belakang alat */
+@keyframes ripple {
+  from { width: 0; height: 0; opacity: 1; }
+  to { width: calc(100cqmin * .85); height: calc(100cqmin * .85); opacity: 0; }
+}
+.note {
+  position: absolute; left: 50%; top: 50%; translate: -50% -50%;
+  font-size: var(--sz, 14px); line-height: 1; color: hsl(var(--ph, var(--mh)) 85% 62%);
+  animation: fly var(--dur, 3s) ease-out forwards;
+}
+@keyframes fly {
+  0% { transform: translate(calc(var(--x0) * 1cqmin), calc(var(--y0) * 1cqmin)) rotate(0deg) scale(.5); opacity: 0; }
+  18% { opacity: .85; }
+  100% { transform: translate(calc(var(--x1) * 1cqmin), calc(var(--y1) * 1cqmin)) rotate(var(--rot, 0deg)) scale(1); opacity: 0; }
+}
+
+/* ---------- kursi lobby (melingkar mengelilingi alat musik) ---------- */
+.seat {
+  position: absolute; width: var(--sw); translate: -50% -50%;
+  left: calc(50% + var(--rx) * var(--c));
+  top: calc(50% + var(--ry) * var(--s));
+}
+.avatar {
+  position: relative;
+  display: grid; place-items: center;
+  width: 100%; aspect-ratio: 1; padding: 0;
+  border: 0; border-radius: 50%;
+  background: hsl(var(--h) 55% 62%);
+  color: #fff; font-weight: 600; font-size: 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.18);
+  transition: box-shadow .12s linear;
+  animation: pop .65s cubic-bezier(.3,1.5,.5,1) calc(.5s + var(--i, 0) * .07s) backwards;
+}
+button.avatar { cursor: pointer; }
+.seat:not(.empty) .avatar { background: transparent; box-shadow: none; }
+.seat.me .avatar { outline: none; }
+.seat.me.on .avatar::after { display: none; }
+.seat.on .avatar ~ .eq { display: none; }
+.seat .avatar ~ .name { top: calc(100% + var(--sw) * .95); }
+.avatar .ins { position: absolute; left: 50%; top: 50%; width: calc(var(--sw) * 2.7); aspect-ratio: 1; translate: -50% -50%; display: block; }
+.avatar .ins::before { content: ''; position: absolute; left: 50%; top: 50%; width: 58%; aspect-ratio: 1; translate: -50% -50%; border-radius: 50%; background: hsl(var(--h) 60% 62%); box-shadow: 0 2px 8px rgba(0,0,0,.18); }
+.seat.me .ins::before { outline: 2px solid var(--ink); outline-offset: 3px; }
+.seat.me.on .ins::before { box-shadow: 0 0 0 calc(3px + var(--level, 0) * 12px) hsl(var(--h) 60% 60% / .22), 0 2px 8px rgba(0,0,0,.18); }
+.avatar .ini { position: absolute; left: calc(50% - var(--sw) * .95); top: calc(50% + var(--sw) * .25); min-width: 15px; height: 15px; padding: 0 4px; display: grid; place-items: center; border-radius: 8px; font-size: 9px; font-weight: 700; line-height: 1; background: hsl(var(--h) 55% 42%); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.seat.empty .avatar .ini { display: none; }
+.avatar .ins svg { position: relative; width: 100%; height: 100%; display: block; overflow: visible; filter: drop-shadow(0 2px 3px rgba(0,0,0,.18)); }
+.seat.empty .avatar .ins { display: none; }
+.avatar .d { transform-box: fill-box; transform-origin: 50% 50%; }
+/* saat lagu diputar: lingkarannya loncat memukul drum satu per satu, drum yang kena berdenyut / cymbal bergoyang */
+.seat.on .avatar .d { animation-duration: 2.4s; animation-iteration-count: infinite; animation-delay: calc(var(--i, 0) * -.37s); }
+.seat.on .avatar .t-k { animation-name: h-k; }
+.seat.on .avatar .t-s { animation-name: h-s; }
+.seat.on .avatar .t-l { animation-name: h-l; }
+.seat.on .avatar .c-r { animation-name: h-cr; }
+.seat.on .avatar .t-r { animation-name: h-r; }
+.seat.on .avatar .t-f { animation-name: h-f; }
+.seat.on .avatar .c-l { animation-name: h-cl; }
+  12.5% { transform: translate(100px, 52px); }
+  25% { transform: translate(45px, 24px); }
+  37.5% { transform: translate(96px, 12px); }
+  50% { transform: translate(77px, 24px); }
+  62.5% { transform: translate(24px, 46px); }
+  75% { transform: translate(100px, 52px); }
+  87.5% { transform: translate(24px, 6px); }
+  100% { transform: translate(60px, 57px); }
+}
+@keyframes h-k {
+  0% { transform: scale(1.13); }
+  4.5% { transform: scale(1.04); }
+  9% { transform: none; }
+  100% { transform: none; }
+}
+@keyframes h-s {
+  0% { transform: none; }
+  12.4% { transform: none; }
+  12.5% { transform: scale(1.13); }
+  17.0% { transform: scale(1.04); }
+  21.5% { transform: none; }
+  74.9% { transform: none; }
+  75% { transform: scale(1.13); }
+  79.5% { transform: scale(1.04); }
+  84% { transform: none; }
+  100% { transform: none; }
+}
+@keyframes h-l {
+  0% { transform: none; }
+  24.9% { transform: none; }
+  25% { transform: scale(1.13); }
+  29.5% { transform: scale(1.04); }
+  34% { transform: none; }
+  100% { transform: none; }
+}
+@keyframes h-cr {
+  0% { transform: none; }
+  37.4% { transform: none; }
+  37.5% { transform: rotate(-6deg) scale(1.07); }
+  42.0% { transform: rotate(4deg) scale(1.03); }
+  46.5% { transform: none; }
+  100% { transform: none; }
+}
+@keyframes h-r {
+  0% { transform: none; }
+  49.9% { transform: none; }
+  50% { transform: scale(1.13); }
+  54.5% { transform: scale(1.04); }
+  59% { transform: none; }
+  100% { transform: none; }
+}
+@keyframes h-f {
+  0% { transform: none; }
+  62.4% { transform: none; }
+  62.5% { transform: scale(1.13); }
+  67.0% { transform: scale(1.04); }
+  71.5% { transform: none; }
+  100% { transform: none; }
+}
+@keyframes h-cl {
+  0% { transform: none; }
+  87.4% { transform: none; }
+  87.5% { transform: rotate(-6deg) scale(1.07); }
+  92.0% { transform: rotate(4deg) scale(1.03); }
+  96.5% { transform: none; }
+  100% { transform: none; }
+}
+.seat.empty .avatar { background: transparent; border: 1.5px dashed var(--dash); box-shadow: none; }
+.seat.me .avatar { outline: 1.5px solid var(--ink); outline-offset: 4px; }
+.seat.me.on .avatar {
+  box-shadow: 0 0 0 calc(3px + var(--level) * 12px) hsl(var(--h) 60% 60% / .22), 0 2px 8px rgba(0,0,0,.18);
+}
+.seat.me.on .avatar::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%;
+  border: 2px solid hsl(var(--h) 60% 60%);
+  animation: ping 1.8s ease-out infinite; pointer-events: none;
+}
+@keyframes ping { from { transform: scale(1); opacity: .55; } to { transform: scale(1.9); opacity: 0; } }
+.seat .name {
+  position: absolute; top: calc(100% + 4px); left: 50%; translate: -50% 0;
+  max-width: 76px; font-size: 10px; color: var(--mute);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  animation: fade 1s calc(.8s + var(--i, 0) * .07s) backwards;
+}
+@keyframes fade { from { opacity: 0; } }
+.seat.me .name { color: var(--ink); }
+.eq {
+  display: none;
+  position: absolute; right: -3px; bottom: -3px;
+  align-items: flex-end; gap: 1.5px; height: 14px; padding: 3px 4px;
+  background: var(--card); border-radius: 7px; box-shadow: 0 1px 3px rgba(0,0,0,.28);
+}
+.seat.on .eq { display: flex; }
+.eq i { width: 2px; height: 100%; background: var(--red); transform-origin: bottom; animation: eq .9s infinite ease-in-out; }
+.eq i:nth-child(2) { animation-delay: -.3s; }
+.eq i:nth-child(3) { animation-delay: -.6s; }
+@keyframes eq { 0%, 100% { transform: scaleY(.3); } 50% { transform: scaleY(1); } }
+
+/* ---------- turntable: plat terang, piringan persegi di atas + strip kontrol tipis ---------- */
+.turntable {
+  /* badan alat selalu terang, warna kontrol di dalamnya dikunci ke palet terang */
+  --card: #fbfbfa; --ink: #161616; --mute: #8a8a86; --line: #dcdcd8;
+  --soft: #f0f0ee; --dash: #c4c4bf; --acc: #161616; --onacc: #fff;
+  --strip: 88px;
+  --w: min(28cqmin, calc(50cqmin - var(--strip)), 270px);
+  color: var(--ink); color-scheme: light;
+
+  position: absolute; left: 50%; top: 50%; translate: -50% -50%;
+  width: var(--w); height: calc(var(--w) + var(--strip));
+  z-index: 1;
+  container-type: inline-size;
+  display: flex; flex-direction: column;
+  border-radius: calc(var(--w) * .04);
+  --hole: 10.4cqw;                     /* lubang transparan di tengah piringan (seukuran label), dalam satuan lebar turntable */
+  transform: rotateX(calc(var(--py) * -4deg)) rotateY(calc(var(--px) * 5deg));
+  transition: transform .3s ease-out, box-shadow .5s;
+  animation: tt-in 1s cubic-bezier(.2,.8,.2,1) .15s backwards;
+}
+/* badan alat: bayangan + plat terang (elemen asli supaya satuan cqw dihitung terhadap lebar turntable); plat punya lubang di tengah */
+.plate-sh, .plate-bg { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+.plate-sh {
+  z-index: -2;
+  box-shadow:
+    0 2cqw 5cqw var(--plate-sh),
+    0 .3cqw .8cqw rgba(0,0,0,.10);
+}
+.plate-bg {
+  z-index: -1;
+  background: linear-gradient(180deg, #fcfcfb, #f3f3f1);
+  box-shadow: inset 0 0 0 .25cqw rgba(255,255,255,.9);
+  -webkit-mask: radial-gradient(circle at 50% 50cqw, transparent 0 var(--hole), #000 calc(var(--hole) + .5px));
+          mask: radial-gradient(circle at 50% 50cqw, transparent 0 var(--hole), #000 calc(var(--hole) + .5px));
+}
+@keyframes tt-in { from { opacity: 0; scale: .9; rotate: -4deg; } }
+
+.tt { position: relative; flex: none; width: 100%; aspect-ratio: 1 / 1; }
+.engrave { position: absolute; left: 5%; top: 4%; font-size: 2.2cqw; letter-spacing: .3cqw; color: #c7c7c2; }
+
+
+.platter {
+  cursor: pointer; outline: none;
+  position: absolute; left: 13%; top: 13%; width: 74%; height: 74%; border-radius: 50%;
+  transform: scale(calc(1 + var(--level) * .014));     /* berdenyut mengikuti bass */
+}
+.record {
+  position: absolute; inset: 0; border-radius: 50%;
+  background:
+    conic-gradient(from 0deg, transparent 0 47%, rgba(255,255,255,.07) 50%, transparent 53% 100%),
+    repeating-radial-gradient(circle at center, #121212 0 .3cqw, #1c1c1c .3cqw .6cqw);
+  -webkit-mask: var(--hole-mask); mask: var(--hole-mask);
+}
+.platter { --hole-mask: radial-gradient(circle at 50% 50%, transparent 0 var(--hole), #000 calc(var(--hole) + .5px)); }
+.platter::before { content: ""; position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 .6cqw 1.6cqw rgba(0,0,0,.25), 0 0 0 .8cqw #262626; }
+.record-fix { position: absolute; inset: 0; border-radius: 50%; pointer-events: none; }   /* label diam: hanya gir di dalamnya yang bergerak */
+.record-fix .ring { position: absolute; left: 32%; top: 32%; width: 36%; height: 36%; border-radius: 50%; background: #2a2a2e; -webkit-mask: var(--hole-mask); mask: var(--hole-mask); }
+.record-fix .label { position: absolute; left: 36%; top: 36%; width: 28%; height: 28%; border-radius: 50%; background: transparent; }
+.label svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.spindle { position: absolute; left: 50%; top: 50%; width: 5%; height: 5%; translate: -50% -50%; border-radius: 50%; background: #777; }
+.sheen {
+  position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(from 25deg, transparent 0 8%, rgba(255,255,255,.08) 13%, transparent 19% 50%, rgba(255,255,255,.08) 63%, transparent 69%);
+  -webkit-mask: var(--hole-mask); mask: var(--hole-mask);
+}
+
+/* tonearm: turun dengan per, naik dengan halus */
+.arm-base {
+  position: absolute; left: calc(88% - 5cqw); top: calc(21% - 5cqw);
+  width: 10cqw; height: 10cqw; border-radius: 50%; background: #fff; z-index: 2;
+  box-shadow: 0 .4cqw 1.2cqw rgba(0,0,0,.18), inset 0 0 0 .25cqw #e4e4e0;
+}
+.arm-base::after { content: ""; position: absolute; inset: 26%; border-radius: 50%; background: linear-gradient(145deg, #f6f6f6, #959595); }
+.tonearm {
+  position: absolute; left: calc(88% - 1.1cqw); top: 21%;
+  width: 2.2cqw; height: 52%;
+  transform-origin: 50% 0; transform: rotate(0deg);
+  transition: transform 1s cubic-bezier(.3,1.35,.5,1);
+  filter: drop-shadow(0 1cqw 1cqw rgba(0,0,0,.18));
+  z-index: 3;
+}
+body:not(.is-playing) .tonearm { transition: transform .8s cubic-bezier(.45,0,.2,1); }
+.tonearm .rod { position: absolute; left: .3cqw; right: .3cqw; top: 0; bottom: 3cqw; border-radius: 1cqw; background: linear-gradient(90deg, #2c2c2c, #0d0d0d, #2c2c2c); }
+.tonearm .cw { position: absolute; left: -1.6cqw; top: -9.5cqw; width: 5.4cqw; height: 8.5cqw; border-radius: .8cqw; background: linear-gradient(90deg, #b5b5b5, #f3f3f3 45%, #9a9a9a); }
+.tonearm .band { position: absolute; left: -.1cqw; right: -.1cqw; top: 72%; height: 1cqw; border-radius: .2cqw; background: var(--red); }
+.tonearm .head { position: absolute; left: -1.2cqw; bottom: -1.5cqw; width: 4.4cqw; height: 6.5cqw; border-radius: .6cqw; background: linear-gradient(90deg, #232323, #111); transform: rotate(-14deg); }
+.tonearm .head::after { content: ""; position: absolute; left: 25%; bottom: -.8cqw; width: 50%; height: 1.6cqw; border-radius: .3cqw; background: #b9b9b9; }
+
+/* tombol putar (Y) */
+.btn-play {
+  position: absolute; left: 3.8%; top: 83.8%; width: 12.4%; height: 12.4%;
+  padding: 0; border: 0; border-radius: 50%; background: transparent;
+  transition: transform .3s cubic-bezier(.3,1.5,.5,1);
+}
+.btn-play:hover { transform: scale(1.1) rotate(-6deg); }
+.btn-play:active { transform: scale(.9); }
+.btn-play svg { width: 100%; height: 100%; stroke: #b1b1ac; transition: stroke .3s; }
+.btn-play:hover svg { stroke: #7d7d78; }
+.is-playing .btn-play svg { stroke: var(--red); }
+
+/* knob volume */
+.knob {
+  position: absolute; left: 79.8%; top: 83.8%; width: 12.4%; height: 12.4%;
+  border-radius: 50%; border: .25cqw solid #b1b1ac;
+  background: radial-gradient(circle at 35% 30%, #fff, #ecece8);
+  cursor: ns-resize; touch-action: none; outline: none;
+  transition: transform .3s cubic-bezier(.3,1.5,.5,1), box-shadow .2s;
+}
+.knob:hover { transform: scale(1.08); }
+.knob:focus-visible { box-shadow: 0 0 0 .6cqw rgba(229,72,59,.35); }
+.knob .dial { position: absolute; inset: 0; border-radius: 50%; transform: rotate(81deg); }
+.knob.boost .dial::after { background: var(--red); }
+.knob .dial::after { content: ""; position: absolute; left: 50%; top: 10%; width: .55cqw; height: 28%; translate: -50% 0; border-radius: .3cqw; background: #444; }
+
+/* layar kecil */
+.display {
+  position: absolute; left: 30%; top: 88.5%; width: 40%; height: 6.5%;
+  display: grid; place-items: center; padding: 0; border: 0; border-radius: .8cqw;
+  background: #1b1b1b; color: #e8e8e4;
+  font: 600 max(2.3cqw, 7px)/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .15cqw; cursor: default;
+}
+body.empty .display { cursor: pointer; }
+
+/* piringan bisa diklik untuk menambah lagu */
+.platter:focus-visible { box-shadow: 0 0 0 .8cqw rgba(229,72,59,.4); }
+body.empty .platter { animation: nudge 2s ease-in-out infinite; }
+@keyframes nudge { 50% { transform: scale(1.03); } }
+body.empty .display { color: var(--red); }
+
+/* ---------- strip kontrol tipis ---------- */
+.strip {
+  flex: 1 1 0; min-height: 0;
+  display: flex; flex-direction: column; justify-content: center; gap: 2px;
+  padding: 0 4% 8px;
+}
+.strip > * { flex: none; }
+.now-title { text-align: center; font-size: 13px; font-weight: 600; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.swap-out { animation: swOut .22s ease-in forwards; }
+.swap-in { animation: swIn .45s cubic-bezier(.2,.8,.2,1); }
+@keyframes swOut { to { opacity: 0; transform: translateX(calc(var(--dir, 1) * -30px)); filter: blur(4px); } }
+@keyframes swIn { from { opacity: 0; transform: translateX(calc(var(--dir, 1) * 30px)); filter: blur(4px); } }
+
+.seek { display: flex; align-items: center; gap: 8px; color: var(--mute); font-size: 11px; font-variant-numeric: tabular-nums; }
+.seek input { flex: 1; min-width: 0; height: 14px; margin: 0; accent-color: var(--ink); }
+
+.transport { display: flex; align-items: center; justify-content: center; gap: 4px; margin-top: 2px; }
+.icon-btn {
+  position: relative; display: grid; place-items: center;
+  width: 34px; height: 34px; padding: 0;
+  border: 1px solid var(--line); border-radius: 50%; background: var(--card);
+  transition: transform .3s cubic-bezier(.3,1.5,.5,1), border-color .3s, background .3s, opacity .3s;
+}
+.icon-btn:hover { transform: translateY(-2px) scale(1.08); border-color: var(--mute); }
+.icon-btn:active { transform: scale(.92); }
+.icon-btn svg { width: 16px; height: 16px; }
+.icon-btn.big { width: 42px; height: 42px; background: var(--acc); border-color: var(--acc); color: var(--onacc); }
+.icon-btn.big svg { width: 20px; height: 20px; }
+.icon-btn.small { width: 28px; height: 28px; border-color: transparent; background: transparent; opacity: .35; }
+.icon-btn.small.active { opacity: 1; }
+.i-pause { display: none; }
+.is-playing .i-play { display: none; }
+.is-playing .i-pause { display: block; }
+#btnLoop[data-mode="all"], #btnLoop[data-mode="one"] { opacity: 1; }
+#btnLoop .one { display: none; position: absolute; font-size: 8px; line-height: 1; }
+#btnLoop[data-mode="one"] .one { display: block; }
+
+/* ---------- drop + toast ---------- */
+.drop { position: fixed; inset: 0; z-index: 50; display: none; place-items: center; background: var(--veil); }
+.drop span { padding: 40px 56px; border: 2px dashed var(--ink); border-radius: 20px; font-size: 18px; font-weight: 600; animation: pop .4s cubic-bezier(.3,1.5,.5,1); }
+body.dragging .drop { display: grid; }
+
+.toast {
+  position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 60;
+  transform: translate(-50%, 30px); opacity: 0; pointer-events: none;
+  padding: 10px 18px; border-radius: 999px; max-width: 90vw; text-align: center;
+  background: var(--acc); color: var(--onacc); font-size: 13px;
+  transition: transform .4s cubic-bezier(.3,1.4,.5,1), opacity .3s;
+}
+.toast.show { transform: translate(-50%, 0); opacity: 1; }
+
+/* ---------- ganti tema: lingkaran membesar dari tombol ---------- */
+::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-new(root) { animation: reveal .9s cubic-bezier(.6,0,.2,1); }
+@keyframes reveal {
+  from { clip-path: circle(0 at var(--tx, 50%) var(--ty, 0)); }
+  to { clip-path: circle(150vmax at var(--tx, 50%) var(--ty, 0)); }
+}
+
+/* ---------- layar sempit / potret (HP) ---------- */
+@media (max-width: 760px), (max-aspect-ratio: 4/5) {
+  .app { padding: 0 8px 8px; }
+  .top { padding: 10px 4px 2px; }
+  .room { display: none; }
+  .l-seats, .l-spot { --sw: 30px; --rx: 38cqw; --ry: 42cqh; }   /* HP potret: lingkaran tidak muat, pakai oval tinggi */
+  .avatar { font-size: 12px; }
+  .seat .name { display: none; }
+  .turntable { --strip: 84px; --w: min(46cqw, calc(52cqh - var(--strip))); scale: .66; }   /* dikecilkan supaya mekanik jam di belakangnya kelihatan */
+  .strip { padding: 0 3% 6px; }
+  .now-title { font-size: 12px; }
+  .transport { gap: 4px; }
+  .icon-btn { width: 28px; height: 28px; }
+  .icon-btn.big { width: 34px; height: 34px; }
+  .icon-btn.small { width: 22px; height: 22px; }
+  .icon-btn svg { width: 14px; height: 14px; }
+  .icon-btn.big svg { width: 18px; height: 18px; }
+}
+
+/* ---------- layar pendek ---------- */
+@media (max-height: 560px) {
+  .top { padding-top: 8px; }
+  .turntable { --strip: 80px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01s !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition: none !important; }
+}
+
+/* gir di label piringan: hitam di tema terang, putih di tema gelap (sama seperti jam besar) */
+.label svg { color: var(--sigil); }
+
+/* animasi alat musik lain saat lagu diputar */
+.avatar .i-mic .mic-in, .avatar .i-trump .tr-in, .avatar .i-tamb .tamb-g, .avatar .i-tamb .jg { transform-box: fill-box; transform-origin: 50% 50%; }
+.avatar .i-mic .mic-in { transform-origin: 50% 100%; }
+.seat.on .avatar .i-mic .mic-in { animation: mic-swing .8s ease-in-out infinite alternate; animation-delay: calc(var(--i, 0) * -.3s); }
+@keyframes mic-swing { from { transform: rotate(-10deg) translateY(1px); } to { transform: rotate(9deg) translateY(-3px) scale(1.05); } }
+.seat.on .avatar .i-tamb .tamb-g { animation: tamb-shake .32s ease-in-out infinite alternate; animation-delay: calc(var(--i, 0) * -.13s); }
+.seat.on .avatar .i-tamb .jg { animation: jing-j .16s ease-in-out infinite alternate; }
+@keyframes tamb-shake { from { transform: rotate(-7deg) translateX(-1px); } to { transform: rotate(7deg) translateX(1px); } }
+@keyframes jing-j { from { transform: translateY(-1.5px); } to { transform: translateY(1.5px); } }
+.seat.on .avatar .i-trump .tr-in { animation: tr-bob 1.2s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -.31s); }
+@keyframes tr-bob { 0%, 100% { transform: translate(0, 0) rotate(0); } 50% { transform: translate(3px, -3px) rotate(-3deg); } }
+.avatar .vl { transform-box: fill-box; }
+.seat.on .avatar .i-trump .vl { animation: valve .6s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -.31s); }
+.seat.on .avatar .i-trump .vl2 { animation-delay: calc(var(--i, 0) * -.31s - .2s); }
+.seat.on .avatar .i-trump .vl3 { animation-delay: calc(var(--i, 0) * -.31s - .4s); }
+@keyframes valve { 0%, 60%, 100% { transform: translateY(0); } 25% { transform: translateY(5px); } }
+.avatar .i-tamb { scale: .86; translate: 0 -2px; }
+
+/* lingkaran di belakang alat ikut "main": loncat tiap ketukan; di drum set dia juga pindah-pindah ke drum yang dipukul */
+.seat.on .ins::before { animation: ball-hop .6s ease-out infinite; animation-delay: calc(var(--i, 0) * -.37s); }
+.avatar .ins:has(.i-kit)::before { width: 44%; left: 50%; top: 56%; }
+.seat.on .ins:has(.i-kit)::before { animation: ball-hop .3s ease-out infinite, ball-move 2.4s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -.37s), calc(var(--i, 0) * -.37s); }
+@keyframes ball-hop { 0% { transform: translateY(0) scale(1.1, .9); } 50% { transform: translateY(-20%) scale(.96, 1.05); } 100% { transform: translateY(0) scale(1.1, .9); } }
+@keyframes ball-move {
+  0% { left: 50.0%; top: 55.0%; }
+  12.5% { left: 83.3%; top: 46.7%; }
+  25% { left: 37.5%; top: 30.0%; }
+  37.5% { left: 80.0%; top: 23.3%; }
+  50% { left: 64.2%; top: 30.0%; }
+  62.5% { left: 20.0%; top: 48.3%; }
+  75% { left: 83.3%; top: 46.7%; }
+  87.5% { left: 21.7%; top: 20.0%; }
+  100% { left: 50.0%; top: 55.0%; }
+}
+
+#chatBtn { display: grid; place-items: center; padding: 7px 10px; color: var(--ink); cursor: pointer; }
+
+/* ---------- chat: gelembung di atas kepala + kolom ketik yang muncul sebentar ---------- */
+.seat.talk { z-index: 6; }
+.bubbles {
+  position: absolute; left: 50%; bottom: calc(100% + var(--sw) * .95); translate: -50% 0;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  width: max-content; max-width: min(150px, 38vw); pointer-events: none;
+}
+.bubble {
+  position: relative; max-width: 100%; box-sizing: border-box; padding: 6px 10px;
+  border-radius: 12px; background: var(--card); color: var(--ink);
+  border: 2px solid hsl(var(--h, 200) 60% 58%);
+  font-size: 12px; line-height: 1.3; font-weight: 500; text-align: center; overflow-wrap: anywhere;
+  box-shadow: 0 3px 10px rgba(0,0,0,.16);
+  opacity: 0; transform: translateY(6px) scale(.85); transform-origin: 50% 100%;
+  transition: opacity .3s, transform .35s cubic-bezier(.3,1.5,.5,1);
+}
+.bubble.show { opacity: 1; transform: none; }
+.bubble:last-child::after {                                   /* ekor hanya di gelembung paling bawah */
+  content: ""; position: absolute; left: 50%; bottom: -6px; width: 9px; height: 9px; translate: -50% 0; rotate: 45deg;
+  background: var(--card); border-right: 2px solid hsl(var(--h, 200) 60% 58%); border-bottom: 2px solid hsl(var(--h, 200) 60% 58%);
+}
+.chatbar {
+  position: fixed; left: 50%; z-index: 30; margin: 0;
+  bottom: calc(var(--kb, 0px) + max(14px, env(safe-area-inset-bottom)));
+  width: min(420px, calc(100vw - 24px));
+  translate: -50% 18px; opacity: 0; pointer-events: none;
+  transition: opacity .2s, translate .25s cubic-bezier(.2,.8,.2,1);
+}
+.chatbar.open { opacity: 1; translate: -50% 0; pointer-events: auto; }
+.chatbar input {
+  width: 100%; box-sizing: border-box; padding: 11px 18px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  font: inherit; font-size: 16px; outline: none; box-shadow: 0 6px 24px rgba(0,0,0,.18);
+}
+.chatbar input:focus { border-color: var(--ink); }
