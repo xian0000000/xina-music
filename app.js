@@ -1152,6 +1152,13 @@
     b.classList.remove('show');
     setTimeout(() => { b.remove(); if (!s.stack.children.length) s.root.classList.remove('talk'); }, 320);
   }
+  function clampStack(st) {                                    // geser tumpukan gelembung supaya tidak keluar dari layar
+    st.style.setProperty('--sx', '0px');
+    const r = st.getBoundingClientRect(), pad = 8, vw = document.documentElement.clientWidth;
+    let dx = 0;
+    if (r.left < pad) dx = pad - r.left; else if (r.right > vw - pad) dx = vw - pad - r.right;
+    if (dx) st.style.setProperty('--sx', Math.round(dx) + 'px');
+  }
   function showBubble(k, text) {
     const s = seatEls[k];
     if (!s || !s.id) return false;
@@ -1164,6 +1171,7 @@
     s.stack.append(b);                                        // pesan baru di bawah, yang lama naik ke atas
     void b.offsetWidth; b.classList.add('show');
     s.root.classList.add('talk');
+    clampStack(s.stack);
     b._t = setTimeout(() => dropBubble(s, b), BUBBLE_MS);
     return true;
   }

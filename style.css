@@ -586,7 +586,7 @@ body.dragging .drop { display: grid; }
 /* ---------- chat: gelembung di atas kepala + kolom ketik yang muncul sebentar ---------- */
 .seat.talk { z-index: 6; }
 .bubbles {
-  position: absolute; left: 50%; bottom: calc(100% + var(--sw) * .95); translate: -50% 0;
+  position: absolute; left: 50%; bottom: calc(100% + var(--sw) * .95); translate: calc(-50% + var(--sx, 0px)) 0;
   display: flex; flex-direction: column; align-items: center; gap: 6px;
   width: max-content; max-width: min(150px, 38vw); pointer-events: none;
 }
@@ -601,7 +601,7 @@ body.dragging .drop { display: grid; }
 }
 .bubble.show { opacity: 1; transform: none; }
 .bubble:last-child::after {                                   /* ekor hanya di gelembung paling bawah */
-  content: ""; position: absolute; left: 50%; bottom: -6px; width: 9px; height: 9px; translate: -50% 0; rotate: 45deg;
+  content: ""; position: absolute; left: calc(50% - var(--sx, 0px)); bottom: -6px; width: 9px; height: 9px; translate: -50% 0; rotate: 45deg;
   background: var(--card); border-right: 2px solid hsl(var(--h, 200) 60% 58%); border-bottom: 2px solid hsl(var(--h, 200) 60% 58%);
 }
 .chatbar {
