@@ -714,6 +714,55 @@
     el.fx.append(p);
   }
   let glowOn = false;
+  /* ---------- alat musik di kursi ikut frekuensi lagu ----------
+     tiga kelompok pita diubah jadi variabel CSS di #seats (0..1), lalu dipakai style.css untuk menggerakkan alat:
+       --kick  lonjakan bass (kick)          -> drum bass, bola di belakang drum
+       --snrA / --snrB  lonjakan mid         -> snare + tom, bergantian kiri/kanan tiap ketukan
+       --hat / --crash lonjakan treble       -> simbal (crash lebih lambat padam)
+       --hi    energi treble yang dihaluskan -> amplitudo goyangan tamborin, dengung senar ukulele
+       --mid   energi mid yang dihaluskan    -> goyangan mic, trumpet, ukulele, pianika, harmonika
+       --note  lonjakan mid (tiap nada baru) -> katup trumpet, tuts pianika, loncatan bola
+     nilai dibulatkan ke 1/24 dan hanya ditulis kalau berubah, supaya style tidak dihitung ulang tiap frame */
+  const RX = { snr: 0, hat: 0, crash: 0, a: 0, b: 0, midS: 0, flip: false, armed: true, pMid: 0, pHi: 0, w: {}, on: false };
+  function rxSet(name, v) {
+    const q = Math.round(Math.min(1, Math.max(0, v)) * 24) / 24;
+    if (RX.w[name] === q) return;
+    RX.w[name] = q;
+    el.seats.style.setProperty('--' + name, q);
+  }
+  function reactInstruments(dt, active) {
+    if (active !== RX.on) { RX.on = active; el.seats.classList.toggle('react', active); }
+    if (!active) {
+      if (RX.snr || RX.hat || RX.crash || RX.a || RX.b || RX.midS || RX.w.kick || RX.w.hi) {
+        RX.snr = RX.hat = RX.crash = RX.a = RX.b = RX.midS = 0;
+        ['kick', 'snrA', 'snrB', 'hat', 'crash', 'hi', 'mid', 'note'].forEach((n) => rxSet(n, 0));
+      }
+      return;
+    }
+    // pita onset: mid ~230 Hz-3 kHz (snare/tom, band 12-33), treble ~3,3 kHz ke atas (hi-hat/simbal, band 36-47).
+    // lonjakan mid dikurangi sebagian kick, karena kick juga menyisakan sedikit energi di mid.
+    let mid = 0; for (let i = 12; i < 34; i++) mid += sm[i];
+    let hh = 0; for (let i = 36; i < BANDS; i++) hh += sm[i];
+    const midN = mid / 22, hhN = hh / (BANDS - 36);
+    const sOn = Math.min(1, Math.max(0, (midN - RX.pMid) * 6 - kick * 0.7));   // seberapa kuat ketukan mid di frame ini
+    const hOn = Math.min(1, Math.max(0, hhN - RX.pHi) * 8);
+    RX.pMid = midN; RX.pHi = hhN;
+    if (sOn > 0.35 && RX.armed) { RX.flip = !RX.flip; RX.armed = false; }   // ketukan baru: pindah ke sisi lain
+    else if (sOn < 0.1) RX.armed = true;
+    const dS = Math.exp(-dt * 11);
+    RX.a *= dS; RX.b *= dS;
+    if (RX.flip) RX.a = Math.max(RX.a, sOn); else RX.b = Math.max(RX.b, sOn);
+    RX.hat = Math.max(RX.hat * Math.exp(-dt * 13), hOn);
+    RX.crash = Math.max(RX.crash * Math.exp(-dt * 5), hOn > 0.6 ? hOn : 0);
+    rxSet('kick', kick);
+    rxSet('snrA', RX.a); rxSet('snrB', RX.b);
+    rxSet('hat', RX.hat); rxSet('crash', RX.crash);
+    rxSet('hi', hiS);
+    RX.midS += (Math.min(1, midN * 2.2) - RX.midS) * Math.min(1, dt * 8);
+    rxSet('mid', RX.midS);                       // energi mid yang dihaluskan: vokal / melodi (mic, trumpet, ukulele, pianika, harmonika)
+    rxSet('note', Math.max(RX.a, RX.b));         // lonjakan mid tanpa membedakan sisi: tiap "nada" baru
+  }
+
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
@@ -747,6 +796,7 @@
     for (let i = 0; i < BANDS; i++) { tot += sm[i]; if (i >= 28) tre += sm[i]; }
     enS += (Math.min(1, (tot / BANDS) * 2.4) - enS) * Math.min(1, dt * 5);
     hiS += (Math.min(1, (tre / (BANDS - 28)) * 3) - hiS) * Math.min(1, dt * 8);
+    reactInstruments(dt, playing && !calm);
     if (!calm) {
       if (playing) {
         if (kick > 0.5 && now - lastRipple > 320) { lastRipple = now; spawnRipple(kick); }

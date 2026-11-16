@@ -710,3 +710,99 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 .gm-duet { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 9px; padding: 7px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--soft); color: var(--ink); font-size: 12px; transition: transform .25s, background .3s; }
 .gm-duet:hover { transform: scale(1.03) rotate(-1deg); }
 .gm-duet:active { transform: scale(.96); }
+
+/* ===== alat musik ikut frekuensi lagu (drum & tamborin) =====
+   variabel --kick --snrA --snrB --hat --crash --hi (0..1) ditulis app.js ke #seats tiap frame (lihat reactInstruments).
+   Kelas .react hanya aktif saat lagu main dan gerakan tidak dikurangi; di luar itu animasi loop lama tetap berlaku. */
+
+/* drum: berhenti dari loop 2,4 dtk, tiap bagian dipukul oleh pita frekuensinya */
+.l-seats.react .seat.on .avatar .d { animation: none; }
+.l-seats.react .seat.on .avatar .t-k { transform: scale(calc(1 + var(--kick, 0) * .13)); }
+.l-seats.react .seat.on .avatar .t-s,
+.l-seats.react .seat.on .avatar .t-f { transform: scale(calc(1 + var(--snrA, 0) * .13)); }
+.l-seats.react .seat.on .avatar .t-l,
+.l-seats.react .seat.on .avatar .t-r { transform: scale(calc(1 + var(--snrB, 0) * .13)); }
+.l-seats.react .seat.on .avatar .c-l { transform: rotate(calc(var(--hat, 0) * -6deg)) scale(calc(1 + var(--hat, 0) * .07)); }
+.l-seats.react .seat.on .avatar .c-r { transform: rotate(calc(var(--crash, 0) * 5deg)) scale(calc(1 + var(--crash, 0) * .07)); }
+/* bola di belakang drum meloncat tepat di kick (masih berpindah mengikuti ball-move) */
+.l-seats.react .seat.on .ins:has(.i-kit)::before {
+  animation: ball-move 2.4s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -.37s);
+  transform: translateY(calc(var(--kick, 0) * -18%)) scale(calc(1.1 - var(--kick, 0) * .14), calc(.9 + var(--kick, 0) * .15));
+}
+
+/* tamborin: kecepatan goyang tetap, tapi lebar goyangannya mengikuti treble; hi-hat memberi hentakan */
+.l-seats.react .seat.on .avatar .i-tamb { --tm: calc(.1 + var(--hi, 0) * .5 + var(--hat, 0) * .4); }
+.l-seats.react .seat.on .avatar .i-tamb .tamb-g { animation-name: tamb-shake-r; }
+.l-seats.react .seat.on .avatar .i-tamb .jg { animation-name: jing-j-r; }
+@keyframes tamb-shake-r {
+  from { transform: rotate(calc(var(--tm, .1) * -9deg)) translateX(calc(var(--tm, .1) * -1.3px)); }
+  to   { transform: rotate(calc(var(--tm, .1) * 9deg)) translateX(calc(var(--tm, .1) * 1.3px)); }
+}
+@keyframes jing-j-r {
+  from { transform: translateY(calc(var(--tm, .1) * -2.2px)); }
+  to   { transform: translateY(calc(var(--tm, .1) * 2.2px)); }
+}
+.l-seats.react .seat.on .ins:has(.i-tamb)::before {
+  animation: none;
+  transform: translateY(calc(var(--hat, 0) * -14%)) scale(calc(1.1 - var(--hat, 0) * .14), calc(.9 + var(--hat, 0) * .15));
+}
+
+/* ===== alat melodi ikut mid (vokal / melodi): mic, trumpet, ukulele, pianika, harmonika =====
+   --mid = energi mid yang dihaluskan (lebar goyangan), --note = lonjakan tiap nada baru (hentakan).
+   Kecepatan goyang tetap dari animasi lama; yang berubah hanya amplitudonya. Lagu hening = alat nyaris diam. */
+.l-seats.react .seat.on .avatar :is(.i-mic, .i-trump, .i-uke, .i-pika, .i-harp) { --tm: calc(.1 + var(--mid, 0) * .65 + var(--note, 0) * .25); }
+
+/* bola di belakang alat meloncat di tiap nada */
+.l-seats.react .seat.on .ins:is(:has(.i-mic), :has(.i-trump), :has(.i-uke), :has(.i-pika), :has(.i-harp))::before {
+  animation: none;
+  --bn: max(var(--note, 0), calc(var(--mid, 0) * .5));
+  transform: translateY(calc(var(--bn) * -18%)) scale(calc(1.1 - var(--bn) * .14), calc(.9 + var(--bn) * .15));
+}
+
+/* mic: miring mengikuti vokal */
+.l-seats.react .seat.on .avatar .i-mic .mic-in { animation-name: mic-swing-r; }
+@keyframes mic-swing-r {
+  from { transform: rotate(calc(var(--tm, .1) * -10deg)) translateY(calc(var(--tm, .1) * 1px)); }
+  to   { transform: rotate(calc(var(--tm, .1) * 9deg)) translateY(calc(var(--tm, .1) * -3px)) scale(calc(1 + var(--tm, .1) * .05)); }
+}
+
+/* trumpet: badan naik-turun sesuai energi, tiga katup ditekan oleh nada yang berbeda */
+.l-seats.react .seat.on .avatar .i-trump .tr-in { animation-name: tr-bob-r; }
+@keyframes tr-bob-r {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  50% { transform: translate(calc(var(--tm, .1) * 3px), calc(var(--tm, .1) * -3px)) rotate(calc(var(--tm, .1) * -3deg)); }
+}
+.l-seats.react .seat.on .avatar .i-trump .vl { animation: none; transform: translateY(calc(var(--snrA, 0) * 5px)); }
+.l-seats.react .seat.on .avatar .i-trump .vl2 { transform: translateY(calc(var(--snrB, 0) * 5px)); }
+.l-seats.react .seat.on .avatar .i-trump .vl3 { transform: translateY(calc(var(--note, 0) * 5px)); }
+
+/* ukulele: goyang mengikuti mid, senar berdengung mengikuti treble + mid */
+.l-seats.react .seat.on .avatar .i-uke .uk-in { animation-name: uk-sway-r; }
+.l-seats.react .seat.on .avatar .i-uke .uk-s { animation-name: uk-buzz-r; --ub: calc(.1 + var(--hi, 0) * .5 + var(--mid, 0) * .4); }
+@keyframes uk-sway-r {
+  from { transform: rotate(calc(var(--tm, .1) * -6deg)) translateY(calc(var(--tm, .1) * 1px)); }
+  to   { transform: rotate(calc(var(--tm, .1) * 5deg)) translateY(calc(var(--tm, .1) * -2px)); }
+}
+@keyframes uk-buzz-r {
+  from { transform: translateX(calc(var(--ub, .1) * -.9px)); }
+  to   { transform: translateX(calc(var(--ub, .1) * .9px)); }
+}
+
+/* pianika: goyang mengikuti mid, empat kelompok tuts ditekan bergantian oleh nada / hi-hat */
+.l-seats.react .seat.on .avatar .i-pika .pi-in { animation-name: pi-sway-r; }
+@keyframes pi-sway-r {
+  from { transform: rotate(calc(var(--tm, .1) * -4deg)) translateY(calc(var(--tm, .1) * 1px)); }
+  to   { transform: rotate(calc(var(--tm, .1) * 4deg)) translateY(calc(var(--tm, .1) * -2px)); }
+}
+.l-seats.react .seat.on .avatar .i-pika .pk { animation: none; }
+.l-seats.react .seat.on .avatar .i-pika .pk0 { transform: translateY(calc(var(--snrA, 0) * 2px)); }
+.l-seats.react .seat.on .avatar .i-pika .pk1 { transform: translateY(calc(var(--snrB, 0) * 2px)); }
+.l-seats.react .seat.on .avatar .i-pika .pk2 { transform: translateY(calc(var(--note, 0) * 2px)); }
+.l-seats.react .seat.on .avatar .i-pika .pk3 { transform: translateY(calc(var(--hat, 0) * 2px)); }
+
+/* harmonika: geser kiri-kanan makin lebar saat lagu penuh energi */
+.l-seats.react .seat.on .avatar .i-harp .hm-in { animation-name: hm-slide-r; }
+@keyframes hm-slide-r {
+  from { transform: translateX(calc(var(--tm, .1) * -4px)) rotate(calc(var(--tm, .1) * -2deg)); }
+  to   { transform: translateX(calc(var(--tm, .1) * 4px)) rotate(calc(var(--tm, .1) * 2deg)); }
+}
