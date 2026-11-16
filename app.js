@@ -711,11 +711,13 @@
     p.addEventListener('animationend', () => { fxNote--; p.remove(); });
     el.fx.append(p);
   }
+  let glowOn = false;
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
 
     const playing = !audio.paused && state.tracks.length > 0;
+    if (playing !== glowOn) { glowOn = playing; document.body.classList.toggle('glow-on', playing); }   // glow: nyala saat lagu main, padam saat berhenti
     const target = playing ? 200 : 0;                       // ~33 rpm
     speed += (target - speed) * Math.min(1, dt * (playing ? 2.2 : 1.4));
     if (!playing && speed < 0.2) speed = 0;
@@ -804,6 +806,7 @@
       const m = ev.data;
       if (!m || m.id === me.id) return;
       if (m.type === 'chat') { chatFrom(m.id, m.text); return; }
+      if (m.type === 'typing') { typingFrom(m.id, m.text); return; }
       if (m.type === 'tap') { const k = seatEls.findIndex((s) => s.id === String(m.id)); if (k > 0) burst(k); return; }
       if (m.type === 'bye') { peers.delete(m.id); renderSeats(); return; }
       const isNew = !peers.has(m.id);
@@ -1128,7 +1131,7 @@
         }, DROP_MS);
       });
       const meRef = db.ref(rdb, ROOM + '/' + me.id);
-      const lastTap = new Map(), lastChat = new Map();
+      const lastTap = new Map(), lastChat = new Map(), lastTyp = new Map();
       let offset = 0, first = true;
 
       // sambung / sambung ulang: daftarkan hapus-otomatis saat koneksi putus, lalu tulis kehadiran
@@ -1189,6 +1192,8 @@
           lastTap.set(id, v.tap || 0);
           const prevChat = lastChat.get(id);
           lastChat.set(id, v.chatAt || 0);
+          const prevTyp = lastTyp.get(id) || '', curTyp = typeof v.typing === 'string' ? v.typing : '';
+          if (curTyp !== prevTyp) { lastTyp.set(id, curTyp); typingFrom(id, curTyp); }
           if (!first && v.chat && v.chatAt && v.chatAt !== prevChat && now - v.chatAt < 10000) said.push([id, v.chat]);   // pesan baru (bukan riwayat lama)
           if (!first && prevTap !== undefined && v.tap && v.tap !== prevTap) {
             const k = seatEls.findIndex((x) => x.id === id);
@@ -1199,7 +1204,7 @@
             playing: !!v.playing, title: String(v.title || '').slice(0, 80), seen: Date.now()
           });
         });
-        for (const id of [...peers.keys()]) if (!seen.has(id)) { peers.delete(id); lastTap.delete(id); lastChat.delete(id); }
+        for (const id of [...peers.keys()]) if (!seen.has(id)) { peers.delete(id); lastTap.delete(id); lastChat.delete(id); lastTyp.delete(id); }
         first = false;
         renderSeats();
         for (const [id, text] of said) chatFrom(id, text);
@@ -1248,9 +1253,40 @@
     b._t = setTimeout(() => dropBubble(s, b), BUBBLE_MS);
     return true;
   }
+  /* ---- 'sedang mengetik': gelembung "..." di atas kepala orangnya (tanpa isi ketikan) ---- */
+  const TYPE_MAX = 40, TYPE_MS = 6000;
+  function typingFrom(id, raw) {
+    const k = seatEls.findIndex((x) => x.id === String(id));
+    if (k < 1) return;                                          // kursimu sendiri tidak perlu: kamu sudah lihat kolom ketiknya
+    const s = seatEls[k];
+    const text = String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim().slice(0, TYPE_MAX);
+    let b = s.typ && s.typ.isConnected && !s.typ.dataset.gone ? s.typ : null;
+    if (!text) { if (b) { clearTimeout(b._t); dropBubble(s, b); } s.typ = null; return; }
+    if (!b) {
+      if (!s.stack) { s.stack = document.createElement('div'); s.stack.className = 'bubbles'; s.root.append(s.stack); }
+      b = document.createElement('div'); b.className = 'bubble typing';
+      s.stack.append(b); s.typ = b;
+      void b.offsetWidth; b.classList.add('show');
+      s.root.classList.add('talk');
+    }
+    b.textContent = '...';                                      // hanya tanda sedang mengetik, tanpa isi tulisannya
+    clampStack(s.stack);
+    clearTimeout(b._t);
+    b._t = setTimeout(() => typingFrom(id, ''), TYPE_MS);       // berhenti mengetik / koneksi putus: hilang sendiri
+  }
+  let typSent = '', typTimer = 0;
+  function sendTyping(raw) {
+    const text = String(raw).trim() ? '...' : '';                // isi ketikan TIDAK dikirim: orang lain cuma melihat "..."
+    if (text === typSent) return;
+    typSent = text;
+    if (fb) fb.update(fb.meRef, { typing: text || null }).catch(() => {});
+    else if (bc) { try { bc.postMessage({ type: 'typing', id: me.id, text }); } catch (err) { /* abaikan */ } }
+  }
+  function stopTyping() { clearTimeout(typTimer); typTimer = 0; sendTyping(''); }
   function chatFrom(id, raw) {
     const text = String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX);
     if (!text) return;
+    typingFrom(id, '');
     const k = seatEls.findIndex((s) => s.id === String(id));
     if (k > 0 && showBubble(k, text)) return;
     const p = peers.get(String(id));                         // tidak kebagian kursi: tampilkan sebagai toast saja
@@ -1261,16 +1297,18 @@
     const t = Date.now();
     if (!text || t - chatLastSend < 800) return false;       // jeda antar pesan supaya tidak spam
     chatLastSend = t;
+    stopTyping();
     showBubble(0, text);
     if (fb) fb.update(fb.meRef, { chat: text, chatAt: Date.now() + srvOff }).catch(() => {});
     else if (bc) { try { bc.postMessage({ type: 'chat', id: me.id, text }); } catch (err) { /* abaikan */ } }
     return true;
   }
   function openChat() { chatBar.classList.add('open'); chatIn.focus(); }
-  function closeChat() { chatBar.classList.remove('open'); chatIn.blur(); }
+  function closeChat() { stopTyping(); chatBar.classList.remove('open'); chatIn.blur(); }
   chatBar.addEventListener('submit', (e) => { e.preventDefault(); if (sendChat(chatIn.value)) chatIn.value = ''; closeChat(); });
+  chatIn.addEventListener('input', () => { if (!typTimer) typTimer = setTimeout(() => { typTimer = 0; sendTyping(chatIn.value); }, 450); });   // dibatasi ~2x/detik
   chatIn.addEventListener('keydown', (e) => { if (e.key === 'Escape') { chatIn.value = ''; closeChat(); } });
-  chatIn.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== chatIn) chatBar.classList.remove('open'); }, 120));
+  chatIn.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== chatIn) { stopTyping(); chatBar.classList.remove('open'); } }, 120));
   $('#chatBtn').addEventListener('click', () => { if (chatBar.classList.contains('open')) closeChat(); else openChat(); });
   if (window.visualViewport) {                              // di HP kolom ketik naik di atas keyboard
     const vv = window.visualViewport;
