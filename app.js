@@ -764,9 +764,6 @@
     enS += (Math.min(1, (tot / BANDS) * 2.4) - enS) * Math.min(1, dt * 5);
     hiS += (Math.min(1, (tre / (BANDS - 28)) * 3) - hiS) * Math.min(1, dt * 8);
     if (!calm) {
-      const enQ = Math.round(enS * 50) / 50, hiQ = Math.round(hiS * 50) / 50;
-      if (enQ !== lastEn) { el.bg.style.setProperty('--en', enQ); el.glow.style.setProperty('--en', enQ); lastEn = enQ; }
-      if (hiQ !== lastHi) { el.bg.style.setProperty('--hi', hiQ); el.glow.style.setProperty('--hi', hiQ); lastHi = hiQ; }
       if (playing && perf.level < 2) {
         if (kick > 0.5 && now - lastRipple > (perf.level ? 520 : 320)) { lastRipple = now; spawnRipple(kick); }
         noteAcc += enS * dt * (perf.level ? 3.5 : 7);
