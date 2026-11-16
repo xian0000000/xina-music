@@ -810,6 +810,7 @@
       if (m.type === 'chat') { chatFrom(m.id, m.text); return; }
       if (m.type === 'typing') { typingFrom(m.id, m.text); return; }
       if (m.type === 'gift') { giftFrom(m.id, m.to, m.kind); return; }
+      if (m.type === 'duet') { duetFrom(m.id, m.to, DUET_MS); return; }
       if (m.type === 'tap') { const k = seatEls.findIndex((s) => s.id === String(m.id)); if (k > 0) burst(k); return; }
       if (m.type === 'bye') { peers.delete(m.id); renderSeats(); return; }
       const isNew = !peers.has(m.id);
@@ -1134,7 +1135,7 @@
         }, DROP_MS);
       });
       const meRef = db.ref(rdb, ROOM + '/' + me.id);
-      const lastTap = new Map(), lastChat = new Map(), lastTyp = new Map(), lastGift = new Map();
+      const lastTap = new Map(), lastChat = new Map(), lastTyp = new Map(), lastGift = new Map(), lastDuet = new Map();
       let offset = 0, first = true;
 
       // sambung / sambung ulang: daftarkan hapus-otomatis saat koneksi putus, lalu tulis kehadiran
@@ -1185,7 +1186,7 @@
       db.onValue(db.ref(rdb, '.info/connected'), (s) => { if (s.val()) tryJoin(); });
 
       db.onValue(db.ref(rdb, ROOM), (snap) => {
-        const now = Date.now() + offset, seen = new Set(), said = [], typers = [], gifts = [];
+        const now = Date.now() + offset, seen = new Set(), said = [], typers = [], gifts = [], duetsNew = [];
         snap.forEach((c) => {
           const id = c.key, v = c.val();
           if (id === me.id || !v) return;
@@ -1198,6 +1199,9 @@
           const prevGift = lastGift.get(id);
           lastGift.set(id, v.giftAt || 0);
           if (!first && v.gift && v.giftTo && v.giftAt && v.giftAt !== prevGift && now - v.giftAt < 8000) gifts.push([id, v.giftTo, v.gift]);   // hadiah baru
+          const prevDuet = lastDuet.get(id);
+          lastDuet.set(id, v.duetAt || 0);
+          if (!first && v.duet && v.duetAt && v.duetAt !== prevDuet && now - v.duetAt < DUET_MS) duetsNew.push([id, v.duet, DUET_MS - (now - v.duetAt)]);   // ajakan duet baru
           const prevTyp = lastTyp.get(id) || 0, curTyp = typeof v.typing === 'number' ? v.typing : 0;
           if (curTyp !== prevTyp) { lastTyp.set(id, curTyp); typers.push([id, curTyp && now - curTyp < TYPE_MS ? '...' : '']); }   // nilai basi (mis. sisa sesi lama) diabaikan
           if (!first && v.chat && v.chatAt && v.chatAt !== prevChat && now - v.chatAt < 10000) said.push([id, v.chat]);   // pesan baru (bukan riwayat lama)
@@ -1210,11 +1214,12 @@
             playing: !!v.playing, title: String(v.title || '').slice(0, 80), seen: Date.now()
           });
         });
-        for (const id of [...peers.keys()]) if (!seen.has(id)) { peers.delete(id); lastTap.delete(id); lastChat.delete(id); lastTyp.delete(id); lastGift.delete(id); }
+        for (const id of [...peers.keys()]) if (!seen.has(id)) { peers.delete(id); lastTap.delete(id); lastChat.delete(id); lastTyp.delete(id); lastGift.delete(id); lastDuet.delete(id); }
         first = false;
         renderSeats();                                          // kursi harus sudah terpasang dulu, baru gelembung bisa ditempel
         for (const [id, text] of typers) typingFrom(id, text);
         for (const [id, to, kind] of gifts) giftFrom(id, to, kind);
+        for (const [id, to, left] of duetsNew) duetFrom(id, to, left);
         for (const [id, text] of said) chatFrom(id, text);
       });
       window.fbTap = () => { if (fb) db.update(meRef, { tap: Date.now() * 1000 + Math.floor(Math.random() * 1000) }).catch(() => {}); };
@@ -1514,7 +1519,7 @@
   let giftLast = 0, gmId = null, gmOpenedAt = 0;
   const gm = document.createElement('div');
   gm.className = 'giftmenu'; gm.hidden = true;
-  gm.innerHTML = '<div class="gm-t"></div><div class="gm-b">' + GIFTS.map((g) => '<button type="button" class="gm-i" data-g="' + g.id + '" style="--h:' + g.h + '"><i></i><span>' + g.name + '</span></button>').join('') + '</div>';
+  gm.innerHTML = '<div class="gm-t"></div><div class="gm-b">' + GIFTS.map((g) => '<button type="button" class="gm-i" data-g="' + g.id + '" style="--h:' + g.h + '"><i></i><span>' + g.name + '</span></button>').join('') + '</div><button type="button" class="gm-duet"><i></i><span>Ajak duet</span></button>';
   document.body.append(gm);
   const gmT = gm.querySelector('.gm-t');
   function closeGiftMenu() { gm.classList.remove('show'); gm.hidden = true; gmId = null; }
@@ -1533,6 +1538,7 @@
     void gm.offsetWidth; gm.classList.add('show');
   }
   gm.addEventListener('click', (e) => {
+    if (e.target.closest('.gm-duet')) { const id = gmId; closeGiftMenu(); if (id) sendDuet(id); return; }
     const b = e.target.closest('.gm-i'); if (!b) return;
     const g = GIFTS.find((x) => x.id === b.dataset.g), id = gmId;
     closeGiftMenu();
@@ -1613,6 +1619,66 @@
     gLight = m ? parseInt(m[1].slice(0, 2), 16) * .3 + parseInt(m[1].slice(2, 4), 16) * .59 + parseInt(m[1].slice(4, 6), 16) * .11 > 128 : false;
   }
   const hc = (h, l, a) => 'hsl(' + Math.round(h) + ' 100% ' + (gLight ? Math.min(l, 56) : l) + '%' + (a == null ? ')' : ' / ' + a + ')');
+
+  /* ---------- duet: dua avatar disambung pita cahaya bergelombang + nada mengalir, keduanya ikut bergoyang ---------- */
+  const DUET_MS = 12000, duets = [];
+  let duetOn = false;
+  function sendDuet(toId) {
+    const t = Date.now();
+    if (t - giftLast < GIFT_GAP) { toast('Tunggu sebentar sebelum mengajak lagi'); return; }
+    if (!seatEls.some((x) => x.id === toId)) { toast('Orangnya sudah pergi'); return; }
+    giftLast = t;
+    duetFrom(me.id, toId, DUET_MS);
+    if (fb) fb.update(fb.meRef, { duet: toId, duetAt: t + srvOff }).catch(() => {});
+    else if (bc) { try { bc.postMessage({ type: 'duet', id: me.id, to: toId }); } catch (err) { /* abaikan */ } }
+  }
+  function duetFrom(a, b, ms) {
+    a = String(a); b = String(b);
+    if (a === b || ms < 800 || rm()) return;
+    const old = duets.findIndex((d) => (d.a === a && d.b === b) || (d.a === b && d.b === a));
+    if (old >= 0) duets.splice(old, 1);
+    while (duets.length >= 4) duets.shift();
+    duets.push({ a, b, t0: performance.now(), dur: ms / 1000, bow: (a < b ? 1 : -1), lastB: 0 });
+    const nm = (id) => id === me.id ? 'kamu' : ((peers.get(id) || {}).name || '?');
+    if (b === me.id) toast(nm(a) + ' mengajakmu berduet');
+    else if (a === me.id) toast('Berduet dengan ' + nm(b));
+    if (!gRaf) { gPrev = performance.now(); gRaf = requestAnimationFrame(gLoop); }
+  }
+  function drawDuet(d, ka, kb, age, now) {
+    const A = center(ka), B = center(kb), dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy) || 1;
+    const ux = dx / L, uy = dy / L, nx = -uy, ny = ux, R = Math.min(30, L * .3);
+    const sx = A.x + ux * R, sy = A.y + uy * R, ex = B.x - ux * R, ey = B.y - uy * R, len = L - 2 * R;
+    const env = Math.max(0, Math.min(1, age / .4, (d.dur - age) / .6));
+    const bow = len * .2 * d.bow, qx = (sx + ex) / 2 + nx * bow * 2, qy = (sy + ey) / 2 + ny * bow * 2;
+    const ha = Number(seatEls[ka].av.style.getPropertyValue('--h')) || 200, hb = Number(seatEls[kb].av.style.getPropertyValue('--h')) || 320;
+    const pt = (t, off) => {
+      const m = 1 - t, x = m * m * sx + 2 * m * t * qx + t * t * ex, y = m * m * sy + 2 * m * t * qy + t * t * ey;
+      return { x: x + nx * off, y: y + ny * off };
+    };
+    const wave = (t, ph) => Math.sin(t * Math.PI) * 9 * env * Math.sin(t * 13 - age * 7 + ph);
+    const grad = gx.createLinearGradient(sx, sy, ex, ey);
+    grad.addColorStop(0, hc(ha, 65, 1)); grad.addColorStop(1, hc(hb, 65, 1));
+    gx.lineCap = 'round'; gx.lineJoin = 'round'; gx.strokeStyle = grad;
+    gx.globalAlpha = .16 * env; gx.lineWidth = 12;                                   // cahaya lembut di bawah pita
+    gx.beginPath(); for (let i = 0; i <= 28; i++) { const q = pt(i / 28, 0); if (i) gx.lineTo(q.x, q.y); else gx.moveTo(q.x, q.y); } gx.stroke();
+    for (const ph of [0, Math.PI]) {                                                 // dua pita yang saling melilit
+      gx.globalAlpha = .9 * env; gx.lineWidth = 2.6;
+      gx.beginPath(); for (let i = 0; i <= 40; i++) { const t = i / 40, q = pt(t, wave(t, ph)); if (i) gx.lineTo(q.x, q.y); else gx.moveTo(q.x, q.y); } gx.stroke();
+    }
+    gx.globalAlpha = env;
+    for (let j = 0; j < 4; j++) {                                                    // nada mengalir bolak-balik
+      for (const dir of [1, -1]) {
+        let t = (age * (dir > 0 ? .5 : .42) + j / 4 + (dir > 0 ? 0 : .13)) % 1; if (dir < 0) t = 1 - t;
+        const q = pt(t, wave(t, dir > 0 ? 0 : Math.PI)), h = ha + (hb - ha) * t;
+        gx.fillStyle = hc(h, 90, .35); gx.beginPath(); gx.arc(q.x, q.y, 9, 0, 6.2832); gx.fill();
+        gx.fillStyle = hc(h, 88); star4(gx, q.x, q.y, 5.5, age * 3 + j); gx.fill();
+      }
+    }
+    const mid = pt(.5, 0), pr = 7 + Math.sin(age * 6) * 3;                           // denyut di tengah
+    gx.strokeStyle = hc((ha + hb) / 2, 70, .8); gx.lineWidth = 2; gx.beginPath(); gx.arc(mid.x, mid.y, pr, 0, 6.2832); gx.stroke();
+    gx.globalAlpha = 1;
+    if (age - d.lastB > .8) { d.lastB = age; burst(ka); burst(kb); }                // nada kecil keluar dari kedua avatar
+  }
   function gLoop(now) {
     const dt = Math.max(0, Math.min(.05, (now - gPrev) / 1000)); gPrev = now;
     gx.setTransform(gD, 0, 0, gD, 0, 0);
@@ -1640,6 +1706,16 @@
       gx.fillStyle = '#fff'; gx.beginPath(); gx.arc(x, y, 3.4, 0, 6.2832); gx.fill();
       if (Math.random() < .8) parts.push({ k: 'spark', x, y, vx: (Math.random() - .5) * 60, vy: (Math.random() - .5) * 60 + 20, h: sh.h, age: 0, life: .3 + Math.random() * .3, w: 1.2 + Math.random() * 1.4 });
     }
+    const act = new Set();
+    for (let i = duets.length - 1; i >= 0; i--) {
+      const d = duets[i], age = Math.max(0, (now - d.t0) / 1000);
+      if (age >= d.dur) { duets.splice(i, 1); continue; }
+      const ka = seatEls.findIndex((x) => x.id === d.a), kb = seatEls.findIndex((x) => x.id === d.b);
+      if (ka < 0 || kb < 0) continue;                           // salah satu keluar: pita berhenti, dan kembali kalau dia masuk lagi
+      act.add(seatEls[ka].root); act.add(seatEls[kb].root);
+      drawDuet(d, ka, kb, age, now);
+    }
+    if (act.size || duetOn) { for (const s of seatEls) s.root.classList.toggle('duet', act.has(s.root)); duetOn = act.size > 0; }
     for (let i = parts.length - 1; i >= 0; i--) {
       const q = parts[i]; q.age += dt;
       const p = q.age / q.life;
@@ -1664,7 +1740,7 @@
       }
     }
     gx.globalCompositeOperation = 'source-over';
-    if (shots.length || parts.length) gRaf = requestAnimationFrame(gLoop);
+    if (shots.length || parts.length || duets.length || duetOn) gRaf = requestAnimationFrame(gLoop);
     else { gRaf = 0; gx.clearRect(0, 0, window.innerWidth, window.innerHeight); }
   }
 

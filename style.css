@@ -690,3 +690,17 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 .gm-i:hover, .gm-i:focus-visible { background: var(--soft); outline: none; }
 .gm-i:active { transform: scale(.92); }
 .gm-i i { width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff 0, hsl(var(--h) 100% 72%) 32%, hsl(var(--h) 90% 48%) 100%); box-shadow: 0 0 0 3px hsl(var(--h) 100% 60% / .18), 0 0 14px hsl(var(--h) 100% 60% / .55); }
+
+/* ---------- duet ---------- */
+.gm-duet { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; box-sizing: border-box; margin-top: 6px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 12px; background: transparent; color: var(--ink); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; transition: background .12s, transform .12s; }
+.gm-duet:hover, .gm-duet:focus-visible { background: var(--soft); outline: none; }
+.gm-duet:active { transform: scale(.97); }
+.gm-duet i { position: relative; width: 27px; height: 16px; flex: none; }
+.gm-duet i::before, .gm-duet i::after { content: ''; position: absolute; top: 0; width: 16px; height: 16px; border-radius: 50%; }
+.gm-duet i::before { left: 0; background: radial-gradient(circle at 35% 30%, #fff 0, hsl(190 100% 70%) 35%, hsl(200 90% 48%)); box-shadow: 0 0 8px hsl(195 100% 60% / .6); }
+.gm-duet i::after { right: 0; background: radial-gradient(circle at 35% 30%, #fff 0, hsl(330 100% 74%) 35%, hsl(335 90% 52%)); box-shadow: 0 0 8px hsl(330 100% 65% / .6); }
+.seat.duet .avatar .ins { animation: duet-bob .55s ease-in-out infinite alternate; }
+.seat.duet .avatar .ins::before { animation: duet-glow .55s ease-in-out infinite alternate; }
+@keyframes duet-bob { from { transform: rotate(-4deg) scale(1); } to { transform: rotate(4deg) scale(1.08); } }
+@keyframes duet-glow { from { box-shadow: 0 0 0 2px hsl(var(--h) 80% 60% / .25), 0 2px 8px rgba(0,0,0,.18); } to { box-shadow: 0 0 0 10px hsl(var(--h) 80% 60% / .12), 0 0 22px hsl(var(--h) 90% 60% / .7); } }
+@media (prefers-reduced-motion: reduce) { .seat.duet .avatar .ins, .seat.duet .avatar .ins::before { animation: none; } }
