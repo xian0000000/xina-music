@@ -653,3 +653,22 @@ body.dragging .drop { display: grid; }
 
 /* tab disembunyikan: hentikan semua animasi CSS yang berjalan terus */
 html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-play-state: paused !important; }
+
+/* pianika: badan bergoyang pelan, tuts ditekan bergantian */
+.avatar .i-pika .pi-in, .avatar .i-pika .pk { transform-box: fill-box; transform-origin: 50% 50%; }
+.seat.on .avatar .i-pika .pi-in { animation: pi-sway .9s ease-in-out infinite alternate; animation-delay: calc(var(--i, 0) * -.29s); }
+.seat.on .avatar .i-pika .pk { animation: pk-press .8s ease-in-out infinite; }
+.seat.on .avatar .i-pika .pk1 { animation-delay: -.2s; }
+.seat.on .avatar .i-pika .pk2 { animation-delay: -.4s; }
+.seat.on .avatar .i-pika .pk3 { animation-delay: -.6s; }
+@keyframes pi-sway { from { transform: rotate(-4deg) translateY(1px); } to { transform: rotate(4deg) translateY(-2px); } }
+@keyframes pk-press { 0%, 55%, 100% { transform: none; } 25% { transform: translateY(2px); } }
+.avatar .i-pika { scale: .84; }
+@media (prefers-reduced-motion: reduce) { .seat.on .avatar .i-pika .pi-in, .seat.on .avatar .i-pika .pk { animation: none; } }
+
+/* harmonika: digeser kiri-kanan seperti ditiup */
+.avatar .i-harp .hm-in { transform-box: fill-box; transform-origin: 50% 50%; }
+.seat.on .avatar .i-harp .hm-in { animation: hm-slide .7s ease-in-out infinite alternate; animation-delay: calc(var(--i, 0) * -.23s); }
+@keyframes hm-slide { from { transform: translateX(-4px) rotate(-2deg); } to { transform: translateX(4px) rotate(2deg); } }
+.avatar .i-harp { scale: .86; }
+@media (prefers-reduced-motion: reduce) { .seat.on .avatar .i-harp .hm-in { animation: none; } }

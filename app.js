@@ -1332,7 +1332,7 @@
     announce(); pushPresence(true); renderSeats();
   }
 
-  // tiap orang kebagian satu alat musik (dipilih dari hash id, jadi sama di semua perangkat): drum set, mic, tamborin, trumpet, ukulele.
+  // tiap orang kebagian satu alat musik (dipilih dari hash id, jadi sama di semua perangkat): drum set, mic, tamborin, trumpet, ukulele, pianika, harmonika.
   // lingkaran warnanya ada di belakang alat; saat lagu diputar alatnya "dimainkan" lewat animasi CSS
   const INSTR = (() => {
     const K = 'stroke="var(--ink)" stroke-linejoin="round" stroke-linecap="round" stroke-width="3"', P = 'fill="var(--card)"';
@@ -1393,7 +1393,29 @@
       + '<circle cx="60" cy="78" r="8" fill="var(--ink)"/>'
       + '<rect x="48" y="102" width="24" height="6" rx="1.5" ' + P + ' ' + K + ' stroke-width="2.6"/>'
       + '</g></g>');
-    return [kit, mic, tamb, trumpet, uke];
+    // --- pianika / melodica (digambar mendatar, pipa tiup di kanan, lalu dimiringkan) ---
+    let wk = '', bk = '';
+    for (let i = 0; i < 8; i++) wk += '<rect class="pk pk' + (i % 4) + '" x="' + (13 + i * 9) + '" y="49" width="9" height="26" ' + P + ' ' + K + ' stroke-width="1.6"/>';
+    for (const i of [0, 1, 3, 4, 5]) bk += '<rect class="pb" x="' + (13 + (i + 1) * 9 - 3) + '" y="49" width="6" height="15" rx="1" fill="var(--ink)"/>';
+    const pika = wrap('i-pika',
+      '<g transform="rotate(-25 60 60)"><g class="pi-in">'
+      + '<rect x="94" y="54" width="21" height="12" rx="4" ' + P + ' ' + K + '/><rect x="109" y="52" width="8" height="16" rx="3" fill="var(--ink)"/>'
+      + '<rect x="4" y="38" width="94" height="44" rx="9" ' + P + ' ' + K + '/>'
+      + '<g class="pw">' + wk + '</g>' + bk
+      + '<circle cx="90" cy="46" r="2" fill="var(--ink)"/><circle cx="90" cy="60" r="2" fill="var(--ink)"/><circle cx="90" cy="74" r="2" fill="var(--ink)"/>'
+      + '</g></g>');
+    // --- harmonika (mendatar, lalu dimiringkan; digeser kiri-kanan seperti ditiup) ---
+    let holes = '';
+    for (let i = 0; i < 10; i++) holes += '<rect x="' + (14.5 + i * 9.1) + '" y="67" width="6.4" height="9" rx="1.2" fill="var(--ink)"/>';
+    const harp = wrap('i-harp',
+      '<g transform="rotate(-18 60 60)"><g class="hm-in">'
+      + '<rect x="5" y="38" width="110" height="44" rx="7" ' + P + ' ' + K + '/>'
+      + '<rect x="10" y="42" width="100" height="19" rx="4" ' + P + ' ' + K + ' stroke-width="2.2"/>'
+      + '<circle cx="18" cy="51.5" r="2.4" fill="var(--ink)"/><circle cx="102" cy="51.5" r="2.4" fill="var(--ink)"/>'
+      + '<line x1="30" y1="51.5" x2="90" y2="51.5" ' + K + ' stroke-width="1.8"/>'
+      + '<line x1="9" y1="64" x2="111" y2="64" ' + K + ' stroke-width="2"/>' + holes
+      + '</g></g>');
+    return [kit, mic, tamb, trumpet, uke, pika, harp];
   })();
   function instrumentFor(id) {
     let h = 0; const s = String(id);
