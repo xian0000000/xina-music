@@ -1182,7 +1182,7 @@
       db.onValue(db.ref(rdb, '.info/connected'), (s) => { if (s.val()) tryJoin(); });
 
       db.onValue(db.ref(rdb, ROOM), (snap) => {
-        const now = Date.now() + offset, seen = new Set(), said = [];
+        const now = Date.now() + offset, seen = new Set(), said = [], typers = [];
         snap.forEach((c) => {
           const id = c.key, v = c.val();
           if (id === me.id || !v) return;
@@ -1192,8 +1192,8 @@
           lastTap.set(id, v.tap || 0);
           const prevChat = lastChat.get(id);
           lastChat.set(id, v.chatAt || 0);
-          const prevTyp = lastTyp.get(id) || '', curTyp = typeof v.typing === 'string' ? v.typing : '';
-          if (curTyp !== prevTyp) { lastTyp.set(id, curTyp); typingFrom(id, curTyp); }
+          const prevTyp = lastTyp.get(id) || 0, curTyp = typeof v.typing === 'number' ? v.typing : 0;
+          if (curTyp !== prevTyp) { lastTyp.set(id, curTyp); typers.push([id, curTyp && now - curTyp < TYPE_MS ? '...' : '']); }   // nilai basi (mis. sisa sesi lama) diabaikan
           if (!first && v.chat && v.chatAt && v.chatAt !== prevChat && now - v.chatAt < 10000) said.push([id, v.chat]);   // pesan baru (bukan riwayat lama)
           if (!first && prevTap !== undefined && v.tap && v.tap !== prevTap) {
             const k = seatEls.findIndex((x) => x.id === id);
@@ -1206,7 +1206,8 @@
         });
         for (const id of [...peers.keys()]) if (!seen.has(id)) { peers.delete(id); lastTap.delete(id); lastChat.delete(id); lastTyp.delete(id); }
         first = false;
-        renderSeats();
+        renderSeats();                                          // kursi harus sudah terpasang dulu, baru gelembung bisa ditempel
+        for (const [id, text] of typers) typingFrom(id, text);
         for (const [id, text] of said) chatFrom(id, text);
       });
       window.fbTap = () => { if (fb) db.update(meRef, { tap: Date.now() * 1000 + Math.floor(Math.random() * 1000) }).catch(() => {}); };
@@ -1254,7 +1255,7 @@
     return true;
   }
   /* ---- 'sedang mengetik': gelembung "..." di atas kepala orangnya (tanpa isi ketikan) ---- */
-  const TYPE_MAX = 40, TYPE_MS = 6000;
+  const TYPE_MAX = 40, TYPE_MS = 5000, TYPE_BEAT = 2500;      // tanda hilang 5 dtk setelah ketikan terakhir; selama mengetik dikirim ulang tiap 2,5 dtk
   function typingFrom(id, raw) {
     const k = seatEls.findIndex((x) => x.id === String(id));
     if (k < 1) return;                                          // kursimu sendiri tidak perlu: kamu sudah lihat kolom ketiknya
@@ -1265,24 +1266,31 @@
     if (!b) {
       if (!s.stack) { s.stack = document.createElement('div'); s.stack.className = 'bubbles'; s.root.append(s.stack); }
       b = document.createElement('div'); b.className = 'bubble typing';
+      b.innerHTML = '<i></i><i></i><i></i>';                    // tiga titik beranimasi
       s.stack.append(b); s.typ = b;
       void b.offsetWidth; b.classList.add('show');
       s.root.classList.add('talk');
     }
-    b.textContent = '...';                                      // hanya tanda sedang mengetik, tanpa isi tulisannya
     clampStack(s.stack);
     clearTimeout(b._t);
     b._t = setTimeout(() => typingFrom(id, ''), TYPE_MS);       // berhenti mengetik / koneksi putus: hilang sendiri
   }
-  let typSent = '', typTimer = 0;
-  function sendTyping(raw) {
-    const text = String(raw).trim() ? '...' : '';                // isi ketikan TIDAK dikirim: orang lain cuma melihat "..."
-    if (text === typSent) return;
-    typSent = text;
-    if (fb) fb.update(fb.meRef, { typing: text || null }).catch(() => {});
-    else if (bc) { try { bc.postMessage({ type: 'typing', id: me.id, text }); } catch (err) { /* abaikan */ } }
+  let typOn = false, typBeat = 0;
+  function sendTyping(on) {                                    // isi ketikan TIDAK dikirim: orang lain cuma melihat "..."
+    const t = Date.now();
+    if (on) {
+      if (typOn && t - typBeat < TYPE_BEAT) return;            // sudah dikabarkan, ulangi tiap 2,5 dtk selama masih mengetik
+      typOn = true; typBeat = t;
+      if (fb) fb.update(fb.meRef, { typing: t + srvOff }).catch(() => {});
+      else if (bc) { try { bc.postMessage({ type: 'typing', id: me.id, text: '...' }); } catch (err) { /* abaikan */ } }
+    } else {
+      if (!typOn) return;
+      typOn = false;
+      if (fb) fb.update(fb.meRef, { typing: null }).catch(() => {});
+      else if (bc) { try { bc.postMessage({ type: 'typing', id: me.id, text: '' }); } catch (err) { /* abaikan */ } }
+    }
   }
-  function stopTyping() { clearTimeout(typTimer); typTimer = 0; sendTyping(''); }
+  function stopTyping() { sendTyping(false); }
   function chatFrom(id, raw) {
     const text = String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX);
     if (!text) return;
@@ -1306,7 +1314,7 @@
   function openChat() { chatBar.classList.add('open'); chatIn.focus(); }
   function closeChat() { stopTyping(); chatBar.classList.remove('open'); chatIn.blur(); }
   chatBar.addEventListener('submit', (e) => { e.preventDefault(); if (sendChat(chatIn.value)) chatIn.value = ''; closeChat(); });
-  chatIn.addEventListener('input', () => { if (!typTimer) typTimer = setTimeout(() => { typTimer = 0; sendTyping(chatIn.value); }, 450); });   // dibatasi ~2x/detik
+  chatIn.addEventListener('input', () => sendTyping(!!chatIn.value.trim()));   // langsung muncul saat mulai mengetik, hilang saat kolom dikosongkan
   chatIn.addEventListener('keydown', (e) => { if (e.key === 'Escape') { chatIn.value = ''; closeChat(); } });
   chatIn.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== chatIn) { stopTyping(); chatBar.classList.remove('open'); } }, 120));
   $('#chatBtn').addEventListener('click', () => { if (chatBar.classList.contains('open')) closeChat(); else openChat(); });
@@ -1324,7 +1332,7 @@
     announce(); pushPresence(true); renderSeats();
   }
 
-  // tiap orang kebagian satu alat musik (dipilih dari hash id, jadi sama di semua perangkat): drum set, mic, tamborin, trumpet.
+  // tiap orang kebagian satu alat musik (dipilih dari hash id, jadi sama di semua perangkat): drum set, mic, tamborin, trumpet, ukulele.
   // lingkaran warnanya ada di belakang alat; saat lagu diputar alatnya "dimainkan" lewat animasi CSS
   const INSTR = (() => {
     const K = 'stroke="var(--ink)" stroke-linejoin="round" stroke-linecap="round" stroke-width="3"', P = 'fill="var(--card)"';
@@ -1370,7 +1378,22 @@
       + valve(42, 1) + valve(54, 2) + valve(66, 3)
       + '<path d="M90 56 Q106 55 109 36 L117 36 L117 84 L109 84 Q106 65 90 64 Z" ' + P + ' ' + K + '/><line x1="113" y1="34" x2="113" y2="86" ' + K + ' stroke-width="5"/>'
       + '</g></g>');
-    return [kit, mic, tamb, trumpet];
+    // --- ukulele (digambar tegak, kepala di atas, lalu dimiringkan) ---
+    let frets = '', strs = '';
+    for (const y of [26, 38, 50]) frets += '<line x1="52" y1="' + y + '" x2="68" y2="' + y + '" ' + K + ' stroke-width="2"/>';
+    for (const x of [55.5, 60, 64.5]) strs += '<line x1="' + x + '" y1="80" x2="' + x + '" y2="103" ' + K + ' stroke-width="1.4"/>';
+    const peg = (cx, cy) => '<circle cx="' + cx + '" cy="' + cy + '" r="4" ' + P + ' ' + K + ' stroke-width="2.6"/>';
+    const uke = wrap('i-uke',
+      '<g class="uk-g" transform="translate(60 60) rotate(35) scale(.84) translate(-60 -62)"><g class="uk-in">'
+      + peg(45, 7) + peg(45, 15) + peg(75, 7) + peg(75, 15)
+      + '<path d="M50 2 Q60 -1 70 2 L68 18 L52 18 Z" ' + P + ' ' + K + '/>'
+      + '<rect x="52" y="17" width="16" height="44" ' + P + ' ' + K + '/>' + frets
+      + '<path d="M50 56 C50 66 36 72 36 90 C36 106 47 117 60 117 C73 117 84 106 84 90 C84 72 70 66 70 56 Z" ' + P + ' ' + K + '/>'
+      + '<g class="uk-s">' + strs + '</g>'
+      + '<circle cx="60" cy="78" r="8" fill="var(--ink)"/>'
+      + '<rect x="48" y="102" width="24" height="6" rx="1.5" ' + P + ' ' + K + ' stroke-width="2.6"/>'
+      + '</g></g>');
+    return [kit, mic, tamb, trumpet, uke];
   })();
   function instrumentFor(id) {
     let h = 0; const s = String(id);
@@ -1425,6 +1448,7 @@
       const sig = p ? [p.id, p.name, p.hue, p.playing].join('|') : '';
       if (s.sig === sig) continue;
       const joined = !!p && s.id !== p.id;
+      if (s.typ && s.id !== (p ? p.id : null)) { clearTimeout(s.typ._t); dropBubble(s, s.typ); s.typ = null; }
       s.sig = sig; s.id = p ? p.id : null; s.on = !!(p && p.playing);
       s.root.classList.toggle('empty', !p);
       s.root.classList.toggle('me', !!(p && p.self));

@@ -579,6 +579,15 @@ body.dragging .drop { display: grid; }
 .seat.on .avatar .i-trump .vl3 { animation-delay: calc(var(--i, 0) * -.31s - .4s); }
 @keyframes valve { 0%, 60%, 100% { transform: translateY(0); } 25% { transform: translateY(5px); } }
 .avatar .i-tamb { scale: .86; translate: 0 -2px; }
+/* ukulele: ayun pelan seperti dipetik, senarnya bergetar */
+.avatar .i-uke .uk-in { transform-box: fill-box; transform-origin: 50% 80%; }
+.avatar .i-uke .uk-s { transform-box: fill-box; transform-origin: 50% 50%; }
+.seat.on .avatar .i-uke .uk-in { animation: uk-sway .7s ease-in-out infinite alternate; animation-delay: calc(var(--i, 0) * -.27s); }
+.seat.on .avatar .i-uke .uk-s { animation: uk-buzz .09s linear infinite alternate; }
+@keyframes uk-sway { from { transform: rotate(-6deg) translateY(1px); } to { transform: rotate(5deg) translateY(-2px); } }
+@keyframes uk-buzz { from { transform: translateX(-.5px); } to { transform: translateX(.5px); } }
+.avatar .i-uke { scale: .94; }
+@media (prefers-reduced-motion: reduce) { .seat.on .avatar .i-uke .uk-in, .seat.on .avatar .i-uke .uk-s { animation: none; } }
 
 /* lingkaran di belakang alat ikut "main": loncat tiap ketukan; di drum set dia juga pindah-pindah ke drum yang dipukul */
 .seat.on .ins::before { animation: ball-hop .6s ease-out infinite; animation-delay: calc(var(--i, 0) * -.37s); }
@@ -617,8 +626,12 @@ body.dragging .drop { display: grid; }
   transition: opacity .3s, transform .35s cubic-bezier(.3,1.5,.5,1);
 }
 .bubble.show { opacity: 1; transform: none; }
-.bubble.typing { opacity: .8; border-style: dashed; font-style: italic; }   /* sedang mengetik */
-.bubble.typing.show { opacity: .8; }
+.bubble.typing { display: flex; align-items: center; gap: 4px; padding: 10px 13px; border-style: dashed; }   /* sedang mengetik */
+.bubble.typing i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .35; animation: typDot 1.2s infinite ease-in-out; }
+.bubble.typing i:nth-child(2) { animation-delay: .15s; }
+.bubble.typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes typDot { 0%, 60%, 100% { transform: none; opacity: .35; } 30% { transform: translateY(-3px); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .bubble.typing i { animation: none; opacity: .7; } }
 .bubble:last-child::after {                                   /* ekor hanya di gelembung paling bawah */
   content: ""; position: absolute; left: calc(50% - var(--sx, 0px)); bottom: -6px; width: 9px; height: 9px; translate: -50% 0; rotate: 45deg;
   background: var(--card); border-right: 2px solid hsl(var(--h, 200) 60% 58%); border-bottom: 2px solid hsl(var(--h, 200) 60% 58%);
