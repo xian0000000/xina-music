@@ -672,3 +672,21 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 @keyframes hm-slide { from { transform: translateX(-4px) rotate(-2deg); } to { transform: translateX(4px) rotate(2deg); } }
 .avatar .i-harp { scale: .86; }
 @media (prefers-reduced-motion: reduce) { .seat.on .avatar .i-harp .hm-in { animation: none; } }
+
+/* ---------- hadiah ---------- */
+.gfx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 60; }
+.giftmenu {
+  position: fixed; z-index: 70; box-sizing: border-box; padding: 10px 10px 8px;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 18px;
+  box-shadow: 0 10px 34px rgba(0,0,0,.22);
+  opacity: 0; transform: translateY(6px) scale(.94); transform-origin: 50% 100%;
+  transition: opacity .18s, transform .22s cubic-bezier(.3,1.4,.5,1);
+}
+.giftmenu[hidden] { display: none; }
+.giftmenu.show { opacity: 1; transform: none; }
+.gm-t { font-size: 11px; font-weight: 600; color: var(--mute); text-align: center; margin: 0 4px 8px; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gm-b { display: flex; gap: 4px; }
+.gm-i { display: grid; justify-items: center; gap: 5px; width: 58px; padding: 6px 2px; border: 0; border-radius: 12px; background: transparent; color: var(--ink); font: inherit; font-size: 11px; font-weight: 500; cursor: pointer; transition: background .12s, transform .12s; }
+.gm-i:hover, .gm-i:focus-visible { background: var(--soft); outline: none; }
+.gm-i:active { transform: scale(.92); }
+.gm-i i { width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff 0, hsl(var(--h) 100% 72%) 32%, hsl(var(--h) 90% 48%) 100%); box-shadow: 0 0 0 3px hsl(var(--h) 100% 60% / .18), 0 0 14px hsl(var(--h) 100% 60% / .55); }

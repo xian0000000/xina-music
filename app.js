@@ -459,6 +459,8 @@
   const stopHold = () => { clearInterval(holdTimer); holdTimer = null; };
   el.stage.addEventListener('pointerdown', (e) => {
     if (e.target.closest('.knob, input[type="range"]')) return;   // geser volume / posisi lagu tidak memicu gelombang
+    const sRoot = e.target.closest('.seat'), sk = sRoot ? seatEls.findIndex((x) => x.root === sRoot) : -1;
+    if (sk > 0 && seatEls[sk].id) { openGiftMenu(sk); return; }    // ketuk avatar orang lain: pilih hadiah (bukan gelombang)
     tapEmit();
     clearInterval(holdTimer);
     holdTimer = setInterval(tapEmit, 380);
@@ -807,6 +809,7 @@
       if (!m || m.id === me.id) return;
       if (m.type === 'chat') { chatFrom(m.id, m.text); return; }
       if (m.type === 'typing') { typingFrom(m.id, m.text); return; }
+      if (m.type === 'gift') { giftFrom(m.id, m.to, m.kind); return; }
       if (m.type === 'tap') { const k = seatEls.findIndex((s) => s.id === String(m.id)); if (k > 0) burst(k); return; }
       if (m.type === 'bye') { peers.delete(m.id); renderSeats(); return; }
       const isNew = !peers.has(m.id);
@@ -1131,7 +1134,7 @@
         }, DROP_MS);
       });
       const meRef = db.ref(rdb, ROOM + '/' + me.id);
-      const lastTap = new Map(), lastChat = new Map(), lastTyp = new Map();
+      const lastTap = new Map(), lastChat = new Map(), lastTyp = new Map(), lastGift = new Map();
       let offset = 0, first = true;
 
       // sambung / sambung ulang: daftarkan hapus-otomatis saat koneksi putus, lalu tulis kehadiran
@@ -1182,7 +1185,7 @@
       db.onValue(db.ref(rdb, '.info/connected'), (s) => { if (s.val()) tryJoin(); });
 
       db.onValue(db.ref(rdb, ROOM), (snap) => {
-        const now = Date.now() + offset, seen = new Set(), said = [], typers = [];
+        const now = Date.now() + offset, seen = new Set(), said = [], typers = [], gifts = [];
         snap.forEach((c) => {
           const id = c.key, v = c.val();
           if (id === me.id || !v) return;
@@ -1192,6 +1195,9 @@
           lastTap.set(id, v.tap || 0);
           const prevChat = lastChat.get(id);
           lastChat.set(id, v.chatAt || 0);
+          const prevGift = lastGift.get(id);
+          lastGift.set(id, v.giftAt || 0);
+          if (!first && v.gift && v.giftTo && v.giftAt && v.giftAt !== prevGift && now - v.giftAt < 8000) gifts.push([id, v.giftTo, v.gift]);   // hadiah baru
           const prevTyp = lastTyp.get(id) || 0, curTyp = typeof v.typing === 'number' ? v.typing : 0;
           if (curTyp !== prevTyp) { lastTyp.set(id, curTyp); typers.push([id, curTyp && now - curTyp < TYPE_MS ? '...' : '']); }   // nilai basi (mis. sisa sesi lama) diabaikan
           if (!first && v.chat && v.chatAt && v.chatAt !== prevChat && now - v.chatAt < 10000) said.push([id, v.chat]);   // pesan baru (bukan riwayat lama)
@@ -1204,10 +1210,11 @@
             playing: !!v.playing, title: String(v.title || '').slice(0, 80), seen: Date.now()
           });
         });
-        for (const id of [...peers.keys()]) if (!seen.has(id)) { peers.delete(id); lastTap.delete(id); lastChat.delete(id); lastTyp.delete(id); }
+        for (const id of [...peers.keys()]) if (!seen.has(id)) { peers.delete(id); lastTap.delete(id); lastChat.delete(id); lastTyp.delete(id); lastGift.delete(id); }
         first = false;
         renderSeats();                                          // kursi harus sudah terpasang dulu, baru gelembung bisa ditempel
         for (const [id, text] of typers) typingFrom(id, text);
+        for (const [id, to, kind] of gifts) giftFrom(id, to, kind);
         for (const [id, text] of said) chatFrom(id, text);
       });
       window.fbTap = () => { if (fb) db.update(meRef, { tap: Date.now() * 1000 + Math.floor(Math.random() * 1000) }).catch(() => {}); };
@@ -1494,6 +1501,171 @@
       }
     }
     seatsReady = true;
+  }
+
+  /* ---------- hadiah: ketuk avatar teman, pilih hadiah, bola cahaya melesat lalu meledak saat kena ---------- */
+  const GIFTS = [
+    { id: 'star', name: 'Bintang', h: 46 },
+    { id: 'fire', name: 'Api', h: 14 },
+    { id: 'ice', name: 'Kristal', h: 194 },
+    { id: 'love', name: 'Cinta', h: 330 }
+  ];
+  const GIFT_GAP = 2500;                                       // jeda antar hadiah, supaya tidak spam
+  let giftLast = 0, gmId = null, gmOpenedAt = 0;
+  const gm = document.createElement('div');
+  gm.className = 'giftmenu'; gm.hidden = true;
+  gm.innerHTML = '<div class="gm-t"></div><div class="gm-b">' + GIFTS.map((g) => '<button type="button" class="gm-i" data-g="' + g.id + '" style="--h:' + g.h + '"><i></i><span>' + g.name + '</span></button>').join('') + '</div>';
+  document.body.append(gm);
+  const gmT = gm.querySelector('.gm-t');
+  function closeGiftMenu() { gm.classList.remove('show'); gm.hidden = true; gmId = null; }
+  function openGiftMenu(k) {
+    const s = seatEls[k];
+    if (!s || !s.id) return;
+    const p = peers.get(s.id);
+    gmId = s.id; gmOpenedAt = performance.now();
+    gmT.textContent = 'Hadiah untuk ' + (p ? p.name : 'teman');
+    gm.hidden = false;
+    const r = s.av.getBoundingClientRect(), w = gm.offsetWidth, h = gm.offsetHeight, vw = document.documentElement.clientWidth;
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2, gap = Math.max(26, r.height * .8);
+    let top = cy - gap - h; if (top < 8) top = cy + gap;
+    gm.style.left = Math.max(8, Math.min(vw - w - 8, cx - w / 2)) + 'px';
+    gm.style.top = Math.max(8, Math.min(window.innerHeight - h - 8, top)) + 'px';
+    void gm.offsetWidth; gm.classList.add('show');
+  }
+  gm.addEventListener('click', (e) => {
+    const b = e.target.closest('.gm-i'); if (!b) return;
+    const g = GIFTS.find((x) => x.id === b.dataset.g), id = gmId;
+    closeGiftMenu();
+    if (g && id) sendGift(id, g);
+  });
+  document.addEventListener('pointerdown', (e) => { if (!gm.hidden && performance.now() - gmOpenedAt > 80 && !e.target.closest('.giftmenu')) closeGiftMenu(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !gm.hidden) closeGiftMenu(); });
+
+  function sendGift(toId, g) {
+    const t = Date.now();
+    if (t - giftLast < GIFT_GAP) { toast('Tunggu sebentar sebelum kirim hadiah lagi'); return; }
+    if (!seatEls.some((x) => x.id === toId)) { toast('Orangnya sudah pergi'); return; }
+    giftLast = t;
+    flyGift(0, seatEls.findIndex((x) => x.id === toId), g);
+    if (fb) fb.update(fb.meRef, { gift: g.id, giftTo: toId, giftAt: t + srvOff }).catch(() => {});
+    else if (bc) { try { bc.postMessage({ type: 'gift', id: me.id, to: toId, kind: g.id }); } catch (err) { /* abaikan */ } }
+  }
+  function giftFrom(fromId, toId, kind) {
+    const g = GIFTS.find((x) => x.id === kind);
+    if (!g) return;
+    const kf = seatEls.findIndex((x) => x.id === String(fromId));
+    const kt = String(toId) === me.id ? 0 : seatEls.findIndex((x) => x.id === String(toId));
+    if (kt < 0) return;
+    flyGift(kf, kt, g);
+    if (kt === 0) { const p = peers.get(String(fromId)); toast((p ? p.name : 'Seseorang') + ' mengirim ' + g.name + ' untukmu'); }
+  }
+
+  // kanvas efek: bola cahaya + jejak + ledakan (blend 'lighter' supaya menyala)
+  const gfx = document.createElement('canvas');
+  gfx.className = 'gfx'; gfx.setAttribute('aria-hidden', 'true');
+  document.body.append(gfx);
+  const gx = gfx.getContext('2d');
+  let gD = 1;
+  function gSize() { gD = Math.min(2, window.devicePixelRatio || 1); gfx.width = Math.round(window.innerWidth * gD); gfx.height = Math.round(window.innerHeight * gD); }
+  gSize(); window.addEventListener('resize', gSize);
+  const shots = [], parts = [];
+  let gRaf = 0, gPrev = 0;
+  const center = (k) => { const r = seatEls[k].av.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+  function flyGift(kf, kt, g) {
+    if (kt < 0 || !seatEls[kt]) return;
+    const b = center(kt), a = kf >= 0 && seatEls[kf] ? center(kf) : { x: window.innerWidth / 2, y: window.innerHeight + 30 };
+    if (rm()) { explode({ x1: b.x, y1: b.y, h: g.h, kt }); return; }
+    const dx = b.x - a.x, dy = b.y - a.y, dist = Math.hypot(dx, dy) || 1, bow = (dx >= 0 ? -1 : 1) * dist * .28;
+    shots.push({
+      t0: performance.now(), dur: Math.max(520, Math.min(1000, 380 + dist * .9)), x0: a.x, y0: a.y, x1: b.x, y1: b.y,
+      cx: (a.x + b.x) / 2 - dy / dist * bow, cy: (a.y + b.y) / 2 + dx / dist * bow - dist * .12, h: g.h, kt, trail: [], spin: 0
+    });
+    if (!gRaf) { gPrev = performance.now(); gRaf = requestAnimationFrame(gLoop); }
+  }
+  function explode(sh) {
+    const { x1: x, y1: y, h } = sh;
+    parts.push({ k: 'flash', x, y, h, age: 0, life: .35 }, { k: 'ring', x, y, h, age: 0, life: .55, r: 90 }, { k: 'ring', x, y, h, age: 0, life: .8, r: 140 });
+    const n = rm() ? 10 : 42;
+    for (let i = 0; i < n; i++) {
+      const an = Math.random() * 6.2832, sp = 90 + Math.random() * 320;
+      parts.push({ k: 'spark', x, y, vx: Math.cos(an) * sp, vy: Math.sin(an) * sp, h: h + (Math.random() - .5) * 26, age: 0, life: .45 + Math.random() * .55, w: 1.4 + Math.random() * 2.2 });
+    }
+    for (let i = 0; i < (rm() ? 2 : 9); i++) {
+      const an = Math.random() * 6.2832, sp = 50 + Math.random() * 200;
+      parts.push({ k: 'star', x, y, vx: Math.cos(an) * sp, vy: Math.sin(an) * sp - 40, h, age: 0, life: .7 + Math.random() * .6, r: 4 + Math.random() * 6, rot: Math.random() * 3 });
+    }
+    const s = seatEls[sh.kt];
+    if (s && s.av.animate && !rm()) {                          // target kena hantam: bergetar sebentar
+      s.av.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.22, .8)', offset: .12 }, { transform: 'translateX(-5px) scale(.96)', offset: .3 }, { transform: 'translateX(4px)', offset: .5 }, { transform: 'translateX(-2px)', offset: .7 }, { transform: 'none' }], { duration: 460, easing: 'ease-out' });
+    }
+    burst(sh.kt);
+    if (!gRaf) { gPrev = performance.now(); gRaf = requestAnimationFrame(gLoop); }
+  }
+  function star4(c, x, y, r, rot) {
+    c.beginPath();
+    for (let i = 0; i < 8; i++) { const a = rot + i * Math.PI / 4, q = i % 2 ? r * .28 : r; c.lineTo(x + Math.cos(a) * q, y + Math.sin(a) * q); }
+    c.closePath();
+  }
+  // tema terang: blend 'lighter' tidak kelihatan di latar putih, jadi pakai warna pekat biasa; tema gelap: menyala (additive)
+  let gLight = false;
+  function gTheme() {
+    const c = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(), m = /^#([0-9a-f]{6})$/i.exec(c);
+    gLight = m ? parseInt(m[1].slice(0, 2), 16) * .3 + parseInt(m[1].slice(2, 4), 16) * .59 + parseInt(m[1].slice(4, 6), 16) * .11 > 128 : false;
+  }
+  const hc = (h, l, a) => 'hsl(' + Math.round(h) + ' 100% ' + (gLight ? Math.min(l, 56) : l) + '%' + (a == null ? ')' : ' / ' + a + ')');
+  function gLoop(now) {
+    const dt = Math.max(0, Math.min(.05, (now - gPrev) / 1000)); gPrev = now;
+    gx.setTransform(gD, 0, 0, gD, 0, 0);
+    gx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    gTheme(); gx.globalCompositeOperation = gLight ? 'source-over' : 'lighter';
+    for (let i = shots.length - 1; i >= 0; i--) {
+      const sh = shots[i], u = Math.max(0, (now - sh.t0) / sh.dur);   // rAF bisa lebih awal dari performance.now(): jangan negatif
+      if (u >= 1) { shots.splice(i, 1); explode(sh); continue; }
+      const e = Math.pow(u, 1.6), m = 1 - e;                  // makin dekat makin ngebut
+      const x = m * m * sh.x0 + 2 * m * e * sh.cx + e * e * sh.x1, y = m * m * sh.y0 + 2 * m * e * sh.cy + e * e * sh.y1;
+      sh.trail.push({ x, y }); if (sh.trail.length > 22) sh.trail.shift();
+      sh.spin += dt * 9;
+      const tl = sh.trail, n = tl.length;
+      gx.lineCap = 'round';
+      for (let j = 1; j < n; j++) {                           // ekor: makin ke belakang makin tipis dan redup
+        const f = j / n;
+        gx.strokeStyle = hc(sh.h, 55 + f * 25, (f * .75).toFixed(3));
+        gx.lineWidth = 1 + f * 9;
+        gx.beginPath(); gx.moveTo(tl[j - 1].x, tl[j - 1].y); gx.lineTo(tl[j].x, tl[j].y); gx.stroke();
+      }
+      const gl = gx.createRadialGradient(x, y, 0, x, y, 30);
+      gl.addColorStop(0, hc(sh.h, 80, .95)); gl.addColorStop(.35, hc(sh.h, 58, .45)); gl.addColorStop(1, hc(sh.h, 50, 0));
+      gx.fillStyle = gl; gx.beginPath(); gx.arc(x, y, 30, 0, 6.2832); gx.fill();
+      gx.fillStyle = hc(sh.h, 92); star4(gx, x, y, 11, sh.spin); gx.fill();
+      gx.fillStyle = '#fff'; gx.beginPath(); gx.arc(x, y, 3.4, 0, 6.2832); gx.fill();
+      if (Math.random() < .8) parts.push({ k: 'spark', x, y, vx: (Math.random() - .5) * 60, vy: (Math.random() - .5) * 60 + 20, h: sh.h, age: 0, life: .3 + Math.random() * .3, w: 1.2 + Math.random() * 1.4 });
+    }
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const q = parts[i]; q.age += dt;
+      const p = q.age / q.life;
+      if (p >= 1) { parts.splice(i, 1); continue; }
+      if (q.k === 'flash') {
+        const r = 40 + p * 70, gr = gx.createRadialGradient(q.x, q.y, 0, q.x, q.y, r);
+        gr.addColorStop(0, hc(q.h, 95, (1 - p).toFixed(3))); gr.addColorStop(.4, hc(q.h, 62, ((1 - p) * .6).toFixed(3))); gr.addColorStop(1, hc(q.h, 55, 0));
+        gx.fillStyle = gr; gx.beginPath(); gx.arc(q.x, q.y, r, 0, 6.2832); gx.fill();
+      } else if (q.k === 'ring') {
+        const r = 6 + q.r * (1 - Math.pow(1 - p, 3));
+        gx.strokeStyle = hc(q.h, 75, ((1 - p) * .9).toFixed(3)); gx.lineWidth = 1.5 + (1 - p) * 5;
+        gx.beginPath(); gx.arc(q.x, q.y, r, 0, 6.2832); gx.stroke();
+      } else {
+        const drag = Math.pow(.04, dt); q.vx *= drag; q.vy = q.vy * drag + 260 * dt;   // melambat + sedikit jatuh
+        q.x += q.vx * dt; q.y += q.vy * dt;
+        if (q.k === 'spark') {
+          gx.strokeStyle = hc(q.h, 65 + (1 - p) * 25, (1 - p).toFixed(3)); gx.lineWidth = q.w * (1 - p * .6); gx.lineCap = 'round';
+          gx.beginPath(); gx.moveTo(q.x, q.y); gx.lineTo(q.x - q.vx * .045, q.y - q.vy * .045); gx.stroke();
+        } else {
+          gx.fillStyle = hc(q.h, 75, (1 - p).toFixed(3)); star4(gx, q.x, q.y, q.r * (1 - p * .5), q.rot + q.age * 4); gx.fill();
+        }
+      }
+    }
+    gx.globalCompositeOperation = 'source-over';
+    if (shots.length || parts.length) gRaf = requestAnimationFrame(gLoop);
+    else { gRaf = 0; gx.clearRect(0, 0, window.innerWidth, window.innerHeight); }
   }
 
   /* ---------- mulai ---------- */
