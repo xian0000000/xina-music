@@ -1516,7 +1516,6 @@
     { id: 'ice', name: 'Kristal', h: 194, ic: ICON('<path d="M6.5 4h11l3.5 5.2-9 10.8-9-10.8z"/><path d="M3 9.2h18M9.5 4L8 9.2l4 10.8 4-10.8L14.5 4"/>') },
     { id: 'love', name: 'Cinta', h: 330, ic: ICON('<path d="M12 20s-7.5-4.6-7.5-10.2A4.2 4.2 0 0 1 12 7.4a4.2 4.2 0 0 1 7.5 2.4C19.5 15.4 12 20 12 20z"/>') }
   ];
-  const GIFT_GAP = 2500;                                       // jeda antar hadiah, supaya tidak spam
   let giftLast = 0, gmId = null, gmOpenedAt = 0;
   const gm = document.createElement('div');
   gm.className = 'giftmenu'; gm.hidden = true;
@@ -1553,8 +1552,7 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !gm.hidden) closeGiftMenu(); });
 
   function sendGift(toId, g) {
-    const t = Date.now();
-    if (t - giftLast < GIFT_GAP) { toast('Tunggu sebentar sebelum kirim hadiah lagi'); return; }
+    const t = Math.max(Date.now(), giftLast + 1);                // tanpa jeda; stempel waktu dibuat selalu naik supaya tiap kiriman terdeteksi
     if (!seatEls.some((x) => x.id === toId)) { toast('Orangnya sudah pergi'); return; }
     giftLast = t;
     flyGift(0, seatEls.findIndex((x) => x.id === toId), g);
@@ -1596,7 +1594,7 @@
   function explode(sh) {
     const { x1: x, y1: y, h } = sh;
     parts.push({ k: 'flash', x, y, h, age: 0, life: .35 }, { k: 'ring', x, y, h, age: 0, life: .55, r: 90 }, { k: 'ring', x, y, h, age: 0, life: .8, r: 140 });
-    const n = rm() ? 10 : 42;
+    const n = rm() || parts.length > 900 ? 10 : 42;               // kalau banyak sekali ledakan sekaligus, kurangi percikan supaya tetap lancar
     for (let i = 0; i < n; i++) {
       const an = Math.random() * 6.2832, sp = 90 + Math.random() * 320;
       parts.push({ k: 'spark', x, y, vx: Math.cos(an) * sp, vy: Math.sin(an) * sp, h: h + (Math.random() - .5) * 26, age: 0, life: .45 + Math.random() * .55, w: 1.4 + Math.random() * 2.2 });
@@ -1626,12 +1624,43 @@
   const hc = (h, l, a) => 'hsl(' + Math.round(h) + ' 100% ' + (gLight ? Math.min(l, 56) : l) + '%' + (a == null ? ')' : ' / ' + a + ')');
 
   /* ---------- duet: dua avatar disambung pita cahaya bergelombang + nada mengalir, keduanya ikut bergoyang ---------- */
-  const DUET_MS = 12000, duets = [];
+  const DUET_MS = 12000, DUET_MAX = 4, duets = [];
   let duetOn = false;
+  const edgeD = new Map(), seenGroups = new Set();
+  // siapa saja yang tersambung (langsung / lewat teman) dengan startId, termasuk pasangan calon `extra`
+  function duetMembers(startId, extra) {
+    const now = performance.now(), pairs = duets.filter((d) => now - d.t0 < d.dur * 1000).map((d) => [d.a, d.b]);
+    if (extra) pairs.push(extra);
+    const mem = new Set([startId]);
+    for (let grow = true; grow;) { grow = false; for (const [x, y] of pairs) if (mem.has(x) !== mem.has(y)) { mem.add(x); mem.add(y); grow = true; } }
+    return mem;
+  }
+  // kelompokkan pasangan yang saling tersambung jadi satu grup (duet / trio / kuartet)
+  function duetGroups() {
+    const par = new Map(), f = (x) => { while (par.get(x) !== x) { par.set(x, par.get(par.get(x))); x = par.get(x); } return x; };
+    const ok = [];
+    for (const d of duets) {
+      if (!seatEls.some((x) => x.id === d.a) || !seatEls.some((x) => x.id === d.b)) continue;
+      ok.push(d);
+      if (!par.has(d.a)) par.set(d.a, d.a); if (!par.has(d.b)) par.set(d.b, d.b);
+      par.set(f(d.a), f(d.b));
+    }
+    const m = new Map();
+    for (const d of ok) {
+      const r = f(d.a); if (!m.has(r)) m.set(r, { ids: new Set(), end: 0, join: new Map(), pairs: [] });
+      const g = m.get(r); g.pairs.push(d); g.end = Math.max(g.end, d.t0 + d.dur * 1000);
+      for (const id of [d.a, d.b]) { g.ids.add(id); g.join.set(id, Math.max(g.join.get(id) || 0, d.t0)); }
+    }
+    return [...m.values()];
+  }
+  function chime(k) {                                          // tanda anggota baru bergabung: dua riak dari avatarnya
+    const c = center(k), h = Number(seatEls[k].av.style.getPropertyValue('--h')) || 200;
+    parts.push({ k: 'ring', x: c.x, y: c.y, h, age: 0, life: .6, r: 70 }, { k: 'ring', x: c.x, y: c.y, h: h + 30, age: 0, life: .9, r: 110 });
+  }
   function sendDuet(toId) {
-    const t = Date.now();
-    if (t - giftLast < GIFT_GAP) { toast('Tunggu sebentar sebelum mengajak lagi'); return; }
+    const t = Math.max(Date.now(), giftLast + 1);
     if (!seatEls.some((x) => x.id === toId)) { toast('Orangnya sudah pergi'); return; }
+    if (duetMembers(me.id, [me.id, toId]).size > DUET_MAX) { toast('Duet sudah penuh (maks ' + DUET_MAX + ' orang)'); return; }
     giftLast = t;
     duetFrom(me.id, toId, DUET_MS);
     if (fb) fb.update(fb.meRef, { duet: toId, duetAt: t + srvOff }).catch(() => {});
@@ -1642,8 +1671,11 @@
     if (a === b || ms < 800 || rm()) return;
     const old = duets.findIndex((d) => (d.a === a && d.b === b) || (d.a === b && d.b === a));
     if (old >= 0) duets.splice(old, 1);
-    while (duets.length >= 4) duets.shift();
-    duets.push({ a, b, t0: performance.now(), dur: ms / 1000, bow: (a < b ? 1 : -1), lastB: 0 });
+    if (duetMembers(a, [a, b]).size > DUET_MAX) { if (a === me.id) toast('Duet sudah penuh (maks ' + DUET_MAX + ' orang)'); return; }
+    const t0 = performance.now(), end = t0 + ms;
+    for (const d of duets) if (duetMembers(a, [a, b]).has(d.a)) d.dur = Math.max(d.dur, (end - d.t0) / 1000);   // anggota lama ikut bertahan selama pendatang baru
+    while (duets.length >= 12) duets.shift();
+    duets.push({ a, b, t0, dur: ms / 1000, bow: (a < b ? 1 : -1), lastB: 0 });
     const nm = (id) => id === me.id ? 'kamu' : ((peers.get(id) || {}).name || '?');
     if (b === me.id) toast(nm(a) + ' mengajakmu berduet');
     else if (a === me.id) toast('Berduet dengan ' + nm(b));
@@ -1670,7 +1702,7 @@
     const ux = dx / L, uy = dy / L, nx = -uy, ny = ux, R = Math.min(30, L * .3);
     const sx = A.x + ux * R, sy = A.y + uy * R, ex = B.x - ux * R, ey = B.y - uy * R, len = L - 2 * R;
     const env = Math.max(0, Math.min(1, age / .5, (d.dur - age) / .8));
-    const bow = len * .22 * d.bow * (1 + .14 * Math.sin(age * 1.3)), qx = (sx + ex) / 2 + nx * bow * 2, qy = (sy + ey) / 2 + ny * bow * 2;   // lengkungnya ikut "bernapas"
+    const bow = (d.bowAbs != null ? d.bowAbs : len * .22 * d.bow) * (1 + .14 * Math.sin(age * 1.3)), qx = (sx + ex) / 2 + nx * bow * 2, qy = (sy + ey) / 2 + ny * bow * 2;   // lengkungnya ikut "bernapas"
     const ha = Number(seatEls[ka].av.style.getPropertyValue('--h')) || 200;
     let hb = Number(seatEls[kb].av.style.getPropertyValue('--h')) || 320;
     hb = ha + ((hb - ha + 540) % 360) - 180;                    // campur warna lewat jalur terpendek di lingkaran warna
@@ -1707,10 +1739,12 @@
         drawNote(gx, q.x - sz * .3, q.y + sz * 1.1, sz, (j + (dir > 0 ? 0 : 1)) % 2, Math.sin(age * 2.4 + j * 2 + dir) * .22);
       }
     }
-    const mid = pt(.5, wave(.5, 0) * .4), bob = Math.sin(age * 3.4) * 2.2;          // not besar mengambang di tengah
-    gx.globalAlpha = env * (gLight ? .09 : .22); gx.fillStyle = hc(hue(.5), tone + 14); gx.beginPath(); gx.arc(mid.x, mid.y - 8, 17, 0, 6.2832); gx.fill();
-    gx.globalAlpha = env; gx.fillStyle = hc(hue(.5), tone); gx.strokeStyle = hc(hue(.5), tone);
-    drawNote(gx, mid.x - 3, mid.y + 6 + bob, 8.5, 1, Math.sin(age * 1.8) * .12);
+    if (d.mid !== false) {                                                         // not besar mengambang di tengah (hanya untuk duet berdua)
+      const mid = pt(.5, wave(.5, 0) * .4), bob = Math.sin(age * 3.4) * 2.2;
+      gx.globalAlpha = env * (gLight ? .09 : .22); gx.fillStyle = hc(hue(.5), tone + 14); gx.beginPath(); gx.arc(mid.x, mid.y - 8, 17, 0, 6.2832); gx.fill();
+      gx.globalAlpha = env; gx.fillStyle = hc(hue(.5), tone); gx.strokeStyle = hc(hue(.5), tone);
+      drawNote(gx, mid.x - 3, mid.y + 6 + bob, 8.5, 1, Math.sin(age * 1.8) * .12);
+    }
     gx.globalAlpha = 1;
     if (age - d.lastB > .9) { d.lastB = age; burst(ka); burst(kb); }
   }
@@ -1741,15 +1775,41 @@
       gx.fillStyle = '#fff'; gx.beginPath(); gx.arc(x, y, 3.4, 0, 6.2832); gx.fill();
       if (Math.random() < .8) parts.push({ k: 'spark', x, y, vx: (Math.random() - .5) * 60, vy: (Math.random() - .5) * 60 + 20, h: sh.h, age: 0, life: .3 + Math.random() * .3, w: 1.2 + Math.random() * 1.4 });
     }
-    const act = new Set();
-    for (let i = duets.length - 1; i >= 0; i--) {
-      const d = duets[i], age = Math.max(0, (now - d.t0) / 1000);
-      if (age >= d.dur) { duets.splice(i, 1); continue; }
-      const ka = seatEls.findIndex((x) => x.id === d.a), kb = seatEls.findIndex((x) => x.id === d.b);
-      if (ka < 0 || kb < 0) continue;                           // salah satu keluar: pita berhenti, dan kembali kalau dia masuk lagi
-      act.add(seatEls[ka].root); act.add(seatEls[kb].root);
-      drawDuet(d, ka, kb, age, now);
+    const act = new Set(), used = new Set(), liveKeys = new Set();
+    for (let i = duets.length - 1; i >= 0; i--) if (now - duets[i].t0 >= duets[i].dur * 1000) duets.splice(i, 1);
+    for (const g of duetGroups()) {
+      const ms = [...g.ids].map((id) => ({ id, k: seatEls.findIndex((x) => x.id === id) })).sort((p, q) => p.k - q.k);   // urutan kursi = urutan melingkar
+      for (const m of ms) act.add(seatEls[m.k].root);
+      const key = ms.map((m) => m.id).join('|'); liveKeys.add(key);
+      if (ms.length >= 3 && !seenGroups.has(key)) {            // grup baru terbentuk / bertambah anggota
+        seenGroups.add(key);
+        for (const m of ms) chime(m.k);
+        if (g.ids.has(me.id)) toast((ms.length === 3 ? 'Trio' : 'Kuartet') + '! ' + ms.map((m) => m.id === me.id ? 'kamu' : ((peers.get(m.id) || {}).name || '?')).join(', ') + ' berduet bareng');
+      }
+      if (ms.length === 2) {
+        const d = g.pairs[0], age = Math.max(0, (now - d.t0) / 1000);
+        d.mid = true; drawDuet(d, ms[0].k, ms[1].k, age, now);
+        continue;
+      }
+      let cx = 0, cy = 0;                                      // pusat lingkaran kursi (bukan pusat anggota) supaya pita melengkung di sisi luar, tidak menimpa pemutar
+      const all = seatEls.map((_, i) => center(i));
+      for (const q of all) { cx += q.x / all.length; cy += q.y / all.length; }
+      const rs = all.reduce((t, q) => t + Math.hypot(q.x - cx, q.y - cy), 0) / all.length;
+      for (let i = 0; i < ms.length; i++) {                    // lingkaran pita: tiap anggota tersambung ke tetangganya
+        const u = ms[i], v = ms[(i + 1) % ms.length], ek = u.id < v.id ? u.id + '>' + v.id : v.id + '>' + u.id;
+        let e = edgeD.get(ek); if (!e) { e = { lastB: 0, mid: false, bow: 1, dur: 0 }; edgeD.set(ek, e); }
+        used.add(ek);
+        const A = center(u.k), B = center(v.k), nx = -(B.y - A.y), ny = B.x - A.x;
+        const mx = (A.x + B.x) / 2 - cx, my = (A.y + B.y) / 2 - cy, chord = Math.hypot(nx, ny) || 1;
+        e.bow = mx * nx + my * ny >= 0 ? 1 : -1;                                              // lengkung ke arah luar
+        e.bowAbs = e.bow * Math.max(chord * .1, rs - Math.hypot(mx, my));                      // puncaknya tepat di lingkaran kursi
+        const age = Math.max(0, (now - Math.max(g.join.get(u.id) || 0, g.join.get(v.id) || 0)) / 1000);
+        e.dur = age + Math.max(0, (g.end - now) / 1000);
+        drawDuet(e, u.k, v.k, age, now);
+      }
     }
+    for (const k of [...edgeD.keys()]) if (!used.has(k)) edgeD.delete(k);
+    for (const k of [...seenGroups]) if (!liveKeys.has(k)) seenGroups.delete(k);
     if (act.size || duetOn) { for (const s of seatEls) s.root.classList.toggle('duet', act.has(s.root)); duetOn = act.size > 0; }
     for (let i = parts.length - 1; i >= 0; i--) {
       const q = parts[i]; q.age += dt;
