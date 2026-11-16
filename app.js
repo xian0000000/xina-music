@@ -11,12 +11,75 @@
     nowTitle: $('#nowTitle'), seek: $('#seek'), tCur: $('#tCur'), tDur: $('#tDur'),
     file: $('#file'), platter: $('#platter'), fx: $('#fx'), spot: $('#spot'), toast: $('#toast'),
     shuffle: $('#btnShuffle'), loop: $('#btnLoop'),
-    theme: $('#theme')
+    theme: $('#theme'), bg: $('#bg'), glow: $('.l-glow'), tt: $('.turntable')
   };
-  const gears = [...document.querySelectorAll('.gear')].map((e) => ({ el: e, k: parseFloat(e.dataset.k), r: parseFloat(e.dataset.r) || 0 }));
+  /* Jam raksasa: dulu satu SVG besar yang digambar ulang penuh tiap gir/jarum bergerak (sangat berat di HP).
+     Sekarang dipecah: dial statis (digambar sekali), tiap gir = SVG kecil yang diputar GPU lewat CSS transform, jarum = SVG sendiri. */
+  function splitSigil() {
+    const svg = document.querySelector('svg.l-sigil');
+    if (!svg || !svg.getBBox) return [];
+    const NS = 'http://www.w3.org/2000/svg', list = [];
+    const wrap = document.createElement('div');
+    wrap.className = 'l-sigil'; wrap.setAttribute('aria-hidden', 'true');
+    svg.parentNode.insertBefore(wrap, svg);
+    svg.setAttribute('class', 'sg-dial'); wrap.append(svg);
+    const hands = svg.querySelector('.hands');
+    let capSvg = null;
+    if (hands) {
+      for (const hp of [...hands.querySelectorAll('.hand')]) {            // tiap jarum = SVG kecil yang diputar GPU (id dipindah ke SVG-nya, jadi kode jam tidak berubah)
+        const hs = document.createElementNS(NS, 'svg');
+        hs.setAttribute('viewBox', '46 -7 8 59'); hs.setAttribute('class', 'sg-hand'); hs.id = hp.id; hp.removeAttribute('id');
+        hs.style.left = '46%'; hs.style.top = '-7%'; hs.style.width = '8%'; hs.style.height = '59%';
+        hs.style.transformOrigin = '50% ' + (57 / 59 * 100).toFixed(3) + '%';
+        const hg = document.createElementNS(NS, 'g'); hg.setAttribute('stroke', 'none'); hg.style.color = '#000';
+        hg.append(hp); hs.append(hg); wrap.append(hs);
+      }
+      capSvg = document.createElementNS(NS, 'svg');                       // tutup poros di tengah (statis), di atas jarum
+      capSvg.setAttribute('viewBox', '0 0 100 100'); capSvg.setAttribute('class', 'sg-cap');
+      capSvg.append(hands); wrap.append(capSvg);
+    }
+    for (const g of [...svg.querySelectorAll('.gear')]) {
+      let b; try { b = g.getBBox(); } catch (e) { b = null; }
+      const o = (g.getAttribute('style') || '').match(/transform-origin:\s*([\d.]+)px\s+([\d.]+)px/);
+      if (!b || !b.width || !o) continue;                                  // tidak bisa dipisah: biarkan di dial seperti semula
+      const pad = 1, x = b.x - pad, y = b.y - pad, w = b.width + 2 * pad, h = b.height + 2 * pad;
+      const s2 = document.createElementNS(NS, 'svg');
+      s2.setAttribute('viewBox', x + ' ' + y + ' ' + w + ' ' + h);
+      s2.setAttribute('class', 'sg-gear');
+      s2.style.left = x + '%'; s2.style.top = y + '%'; s2.style.width = w + '%'; s2.style.height = h + '%';
+      s2.style.transformOrigin = ((parseFloat(o[1]) - x) / w * 100).toFixed(3) + '% ' + ((parseFloat(o[2]) - y) / h * 100).toFixed(3) + '%';
+      const grp = document.createElementNS(NS, 'g');                       // atribut gambar yang tadinya diwarisi dari grup induk
+      grp.setAttribute('fill', 'none'); grp.setAttribute('stroke', 'currentColor');
+      grp.setAttribute('stroke-linecap', 'round'); grp.setAttribute('stroke-linejoin', 'round');
+      const k = parseFloat(g.dataset.k), r = parseFloat(g.dataset.r) || 0;
+      g.removeAttribute('style'); g.classList.remove('gear');
+      grp.append(g); s2.append(grp); wrap.insertBefore(s2, wrap.querySelector('.sg-hand'));
+      list.push({ el: s2, k, r });
+    }
+    return list;
+  }
+  const gears = [...document.querySelectorAll('.label .gear')].map((e) => ({ el: e, k: parseFloat(e.dataset.k), r: parseFloat(e.dataset.r) || 0 })).concat(splitSigil());
   // k = kecepatan relatif (dihitung dari jumlah gigi, arah selang-seling), r = sudut awal supaya gigi saling mengunci
   const placeGears = (ang) => { for (const g of gears) g.el.style.transform = 'rotate(' + (g.r + ang * g.k).toFixed(3) + 'deg)'; };
   const rm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------- mode hemat otomatis ----------
+     Kalau FPS rata-rata turun di bawah ~40 fps selama beberapa detik, efek dekoratif paling berat dikurangi bertahap
+     (level 1 lalu 2). Semua fitur tetap jalan; yang berubah hanya detail visual. Perangkat kuat tidak terpengaruh. */
+  const perf = { level: 0, acc: 0, n: 0, t0: performance.now(), bad: 0, hidden: false };
+  const perfSet = (lv) => { perf.level = lv; document.documentElement.dataset.perf = String(lv); };
+  function perfSample(raw, now) {
+    if (perf.hidden || raw > 250 || now - perf.t0 < 4000 || perf.level >= 2) return;      // abaikan 4 detik pertama (animasi masuk) & jeda tab
+    perf.acc += raw; perf.n++;
+    if (perf.n < 90) return;
+    const avg = perf.acc / perf.n; perf.acc = 0; perf.n = 0;
+    if (avg > 25) { if (++perf.bad >= 2) { perf.bad = 0; perfSet(perf.level + 1); perf.t0 = now; } } else perf.bad = 0;   // dua jendela berturut-turut buruk -> turun level
+  }
+  document.addEventListener('visibilitychange', () => {
+    perf.hidden = document.hidden;
+    document.documentElement.classList.toggle('is-hidden', document.hidden);
+    perf.t0 = performance.now(); perf.acc = 0; perf.n = 0;
+  });
 
   /* ---------- util ---------- */
   const store = {
@@ -329,16 +392,25 @@
   });
 
   /* ---------- parallax: turntable miring, kursi dan cincin bergeser ---------- */
+  let pxT = 0, pyT = 0, pxQ = NaN, pyQ = NaN, pxRaf = 0;
+  function applyParallax() {
+    pxRaf = 0;
+    const px = Math.round(pxT * 100) / 100, py = Math.round(pyT * 100) / 100;     // dibulatkan: gerakan mouse kecil tidak memicu render ulang
+    if (px === pxQ && py === pyQ) return;
+    pxQ = px; pyQ = py;
+    const sh = 'translate(' + (px * -12).toFixed(2) + 'px,' + (py * -7).toFixed(2) + 'px)';
+    el.seats.style.transform = sh; el.spot.style.transform = sh;
+    if (el.tt) el.tt.style.transform = 'rotateX(' + (py * -4).toFixed(2) + 'deg) rotateY(' + (px * 5).toFixed(2) + 'deg)';
+  }
+  const askParallax = () => { if (!pxRaf) pxRaf = requestAnimationFrame(applyParallax); };
   el.stage.addEventListener('pointermove', (e) => {
-    if (e.pointerType === 'touch') return;
+    if (e.pointerType === 'touch' || perf.level >= 2) return;
     const r = el.stage.getBoundingClientRect();
-    el.stage.style.setProperty('--px', ((e.clientX - r.left) / r.width - 0.5).toFixed(3));
-    el.stage.style.setProperty('--py', ((e.clientY - r.top) / r.height - 0.5).toFixed(3));
-  });
-  el.stage.addEventListener('pointerleave', () => {
-    el.stage.style.setProperty('--px', 0);
-    el.stage.style.setProperty('--py', 0);
-  });
+    pxT = (e.clientX - r.left) / r.width - 0.5;
+    pyT = (e.clientY - r.top) / r.height - 0.5;
+    askParallax();
+  }, { passive: true });
+  el.stage.addEventListener('pointerleave', () => { pxT = 0; pyT = 0; askParallax(); });
 
   /* ---------- user menekan layar: avatarnya melompat dan mengeluarkan gelombang ---------- */
   function seatRipple(fx, ph, o, delay) {
@@ -619,12 +691,12 @@
 
   /* ---------- animasi: piringan berputar ---------- */
   let rot = 0, speed = 0, last = performance.now(), lv = 0, lastLv = -1, kick = 0, prevBass = 0;
-  let enS = 0, hiS = 0, lastEn = -1, lastHi = -1, lastRipple = 0, noteAcc = 0;
+  let enS = 0, hiS = 0, lastEn = -1, lastHi = -1, lastRipple = 0, noteAcc = 0, clkAcc = 0;
   const GLYPHS = ['♪', '♫', '♪', '•'];
 
   // riak melebar dari balik alat setiap ketukan bass
   function spawnRipple(str) {
-    if (el.fx.childElementCount > 40) return;
+    if (el.fx.childElementCount > (perf.level ? 16 : 40)) return;
     const r = document.createElement('i');
     r.className = 'ripple';
     r.style.setProperty('--ph', (322 + Math.random() * 26).toFixed(0));      // pink -> magenta
@@ -634,7 +706,7 @@
   }
   // not / titik kecil melayang keluar dari balik alat ke arah kursi
   function spawnNote() {
-    if (el.fx.childElementCount > 40) return;
+    if (el.fx.childElementCount > (perf.level ? 16 : 40)) return;
     const p = document.createElement('span');
     p.className = 'note';
     p.style.setProperty('--ph', (322 + Math.random() * 26).toFixed(0));
@@ -652,8 +724,10 @@
     el.fx.append(p);
   }
   function frame(now) {
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const rawDt = now - last;
+    const dt = Math.min(0.05, rawDt / 1000);
     last = now;
+    perfSample(rawDt, now);
 
     const playing = !audio.paused && state.tracks.length > 0;
     const target = playing ? 200 : 0;                       // ~33 rpm
@@ -671,9 +745,10 @@
     kick = Math.max(kick * Math.exp(-dt * 9), Math.min(1, Math.max(0, bassN - prevBass) * 5));   // lonjakan bass = ketukan
     prevBass = bassN;
     lv += (Math.min(1, bassN * 1.1 + kick * 0.35) - lv) * Math.min(1, dt * 30);
-    if (Math.abs(lv - lastLv) > 0.004) {
-      el.stage.style.setProperty('--level', lv.toFixed(3));
-      lastLv = lv;
+    const lvQ = Math.round(lv * 40) / 40;                    // 40 langkah sudah mulus; mengurangi invalidasi style
+    if (lvQ !== lastLv) {
+      el.stage.style.setProperty('--level', lvQ.toFixed(3));
+      lastLv = lvQ;
     }
 
     // ---- ruangan ikut hidup ----
@@ -683,16 +758,24 @@
     enS += (Math.min(1, (tot / BANDS) * 2.4) - enS) * Math.min(1, dt * 5);
     hiS += (Math.min(1, (tre / (BANDS - 28)) * 3) - hiS) * Math.min(1, dt * 8);
     if (!calm) {
-      if (Math.abs(enS - lastEn) > 0.004) { root.style.setProperty('--en', enS.toFixed(3)); lastEn = enS; }
-      if (Math.abs(hiS - lastHi) > 0.004) { root.style.setProperty('--hi', hiS.toFixed(3)); lastHi = hiS; }
-      if (playing) {
-        if (kick > 0.5 && now - lastRipple > 320) { lastRipple = now; spawnRipple(kick); }
-        noteAcc += enS * dt * 7;
+      const enQ = Math.round(enS * 50) / 50, hiQ = Math.round(hiS * 50) / 50;
+      if (enQ !== lastEn) { el.bg.style.setProperty('--en', enQ); el.glow.style.setProperty('--en', enQ); lastEn = enQ; }
+      if (hiQ !== lastHi) { el.bg.style.setProperty('--hi', hiQ); el.glow.style.setProperty('--hi', hiQ); lastHi = hiQ; }
+      if (playing && perf.level < 2) {
+        if (kick > 0.5 && now - lastRipple > (perf.level ? 520 : 320)) { lastRipple = now; spawnRipple(kick); }
+        noteAcc += enS * dt * (perf.level ? 3.5 : 7);
         while (noteAcc >= 1) { noteAcc -= 1; spawnNote(); }
       } else noteAcc = 0;
     }
 
-    stepClock(dt, playing && !calm);
+    // jam raksasa = SVG besar yang digambar ulang penuh tiap update. Saat diam geraknya cuma ~3 derajat/detik, jadi cukup ~10 fps;
+    // jarum detik tetap mulus karena update penuh dipakai tepat saat detik/menit berganti dan selama pegasnya belum tenang.
+    clkAcc += dt;
+    const clkBusy = playing || CLK.extra !== 0 || CLK.vel !== 0 || CLK.fin || CLK.resetting || CLK.tick !== 0
+      || Math.abs(SEC.count * 6 - SEC.x) > 0.02 || Math.abs(SEC.v) > 0.05
+      || new Date().getSeconds() !== SEC.last || realMin() !== CLK.last;
+    const clkGap = clkBusy ? (perf.level >= 2 ? 1 / 20 : perf.level ? 1 / 30 : 0) : 1 / 10;
+    if (clkAcc >= clkGap - 0.002) { stepClock(Math.min(0.1, clkAcc), playing && !calm); clkAcc = 0; }
 
     requestAnimationFrame(frame);
   }
@@ -964,10 +1047,11 @@
     const pcm = new Int16Array(pcmF.length);
     for (let i = 0; i < pcmF.length; i++) { const v = Math.max(-1, Math.min(1, pcmF[i])); pcm[i] = v < 0 ? v * 32768 : v * 32767; }
     const enc = new lamejs.Mp3Encoder(1, rate, KBPS), out = [], B = 1152 * 20;
+    let tY = performance.now();
     for (let i = 0; i < pcm.length; i += B) {
       const d = enc.encodeBuffer(pcm.subarray(i, i + B));
       if (d.length) out.push(d);
-      if ((i / B) % 25 === 0) { onProg && onProg(i / pcm.length); await new Promise((r) => setTimeout(r)); }   // beri napas ke UI
+      if (performance.now() - tY > 10) { onProg && onProg(i / pcm.length); await new Promise((r) => setTimeout(r)); tY = performance.now(); }   // beri napas ke UI tiap ~10 ms
     }
     const e = enc.flush(); if (e.length) out.push(e);
     return new Blob(out, { type: 'audio/mpeg' });
