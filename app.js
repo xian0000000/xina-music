@@ -68,6 +68,11 @@
      (level 1 lalu 2). Semua fitur tetap jalan; yang berubah hanya detail visual. Perangkat kuat tidak terpengaruh. */
   const perf = { level: 0, acc: 0, n: 0, t0: performance.now(), bad: 0, hidden: false };
   const perfSet = (lv) => { perf.level = lv; document.documentElement.dataset.perf = String(lv); };
+  try {                                                           // HP / perangkat lemah langsung mulai di mode hemat ringan (level 1)
+    const weak = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) || (navigator.deviceMemory && navigator.deviceMemory <= 4)
+      || (matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 800);
+    if (weak) perfSet(1);
+  } catch (e) { /* abaikan */ }
   function perfSample(raw, now) {
     if (perf.hidden || raw > 250 || now - perf.t0 < 4000 || perf.level >= 2) return;      // abaikan 4 detik pertama (animasi masuk) & jeda tab
     perf.acc += raw; perf.n++;
@@ -649,10 +654,11 @@
     }
   }
 
+  let fftTick = false;
   function computeBars(dt, now, playing) {
     if (playing) {
       if (analyser && bLo) {
-        analyser.getByteFrequencyData(freq);
+        if (!perf.level || (fftTick = !fftTick)) analyser.getByteFrequencyData(freq);   // mode hemat: FFT tiap 2 frame
         for (let i = 0; i < BANDS; i++) {
           let v;
           if (bHi[i] - bLo[i] >= 2) { v = 0; for (let b = bLo[i]; b <= bHi[i]; b++) if (freq[b] > v) v = freq[b]; }
@@ -696,7 +702,7 @@
 
   // riak melebar dari balik alat setiap ketukan bass
   function spawnRipple(str) {
-    if (el.fx.childElementCount > (perf.level ? 16 : 40)) return;
+    if (el.fx.childElementCount > (perf.level ? 12 : 26)) return;
     const r = document.createElement('i');
     r.className = 'ripple';
     r.style.setProperty('--ph', (322 + Math.random() * 26).toFixed(0));      // pink -> magenta
@@ -706,7 +712,7 @@
   }
   // not / titik kecil melayang keluar dari balik alat ke arah kursi
   function spawnNote() {
-    if (el.fx.childElementCount > (perf.level ? 16 : 40)) return;
+    if (el.fx.childElementCount > (perf.level ? 12 : 26)) return;
     const p = document.createElement('span');
     p.className = 'note';
     p.style.setProperty('--ph', (322 + Math.random() * 26).toFixed(0));
@@ -931,11 +937,17 @@
     return p;
   }
   function fetchSong(t) {
-    return fb.db.get(fb.db.ref(fb.rdb, 'lobby/chunks/' + t.id)).then((snap) => {
+    return fb.db.get(fb.db.ref(fb.rdb, 'lobby/chunks/' + t.id)).then(async (snap) => {
       const v = snap.val();
       if (!v) throw new Error('kosong');
       const arr = Array.isArray(v) ? v : Object.keys(v).sort((a, b) => a - b).map((k) => v[k]);
-      const parts = arr.map((c) => { const bin = atob(c), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; });
+      const parts = [];
+      for (const c of arr) {                                   // satu potongan (256 KB) per giliran, lalu beri napas ke UI (animasi tidak macet saat lagu masuk)
+        const bin = atob(c), u = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+        parts.push(u);
+        await new Promise((r) => setTimeout(r));
+      }
       const blob = new Blob(parts, { type: t.type || 'audio/mpeg' });
       idbPut(t.id, blob);
       const url = URL.createObjectURL(blob);

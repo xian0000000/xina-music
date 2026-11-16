@@ -641,12 +641,15 @@ body.dragging .drop { display: grid; }
 /* level 1: kurangi kerja dekoratif yang paling mahal, tampilan tetap sama */
 html[data-perf="1"] .bg { animation: none; }
 html[data-perf="1"] .s-glow { display: none; }
+html[data-perf="1"] .turntable { transform: none !important; }   /* tanpa miring 3D */
 html[data-perf="1"] .tonearm, html[data-perf="1"] .avatar .ins svg { filter: none; }
 /* level 2: HP/PC lawas — matikan efek partikel, latar diam */
 html[data-perf="2"] .bg { animation: none; scale: 1; }
 html[data-perf="2"] .bg::before, html[data-perf="2"] .bg::after { display: none; }
 html[data-perf="2"] .ripple, html[data-perf="2"] .note, html[data-perf="2"] .s-ripple, html[data-perf="2"] .s-note, html[data-perf="2"] .s-glow { display: none; }
 html[data-perf="2"] .seat.on .ins::before { animation: none; }
+/* level 2: isi SVG kursi pendengar lain berhenti bergerak (kursimu tetap hidup) */
+html[data-perf="2"] .seat:not(.me).on .avatar .d, html[data-perf="2"] .seat:not(.me).on .avatar [class*="i-"] * { animation: none; }
 html[data-perf="2"] .brand-dot, html[data-perf="2"] .eq i { animation: none; }
 /* tab disembunyikan: hentikan semua animasi CSS yang berjalan terus */
 html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-play-state: paused !important; }
