@@ -63,30 +63,8 @@
   const placeGears = (ang) => { for (const g of gears) g.el.style.transform = 'rotate(' + (g.r + ang * g.k).toFixed(3) + 'deg)'; };
   const rm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  /* ---------- mode hemat otomatis ----------
-     Kalau FPS rata-rata turun di bawah ~40 fps selama beberapa detik, efek dekoratif paling berat dikurangi bertahap
-     (level 1 lalu 2). Semua fitur tetap jalan; yang berubah hanya detail visual. Perangkat kuat tidak terpengaruh. */
-  const perf = { level: 0, acc: 0, n: 0, t0: performance.now(), bad: 0, hidden: false };
-  const perfSet = (lv) => { perf.level = lv; document.documentElement.dataset.perf = String(lv); };
-  try {                                                           // HP / perangkat lemah langsung mulai di mode hemat ringan (level 1)
-    const weak = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) || (navigator.deviceMemory && navigator.deviceMemory <= 4)
-      || (matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 800);
-    if (weak) perfSet(1);
-  } catch (e) { /* abaikan */ }
-  function perfSample(raw, now) {
-    if (perf.hidden || raw > 250 || now - perf.t0 < 4000 || perf.level >= 2) return;      // abaikan 4 detik pertama (animasi masuk) & jeda tab
-    perf.acc += raw; perf.n++;
-    if (perf.n < 90) return;
-    const avg = perf.acc / perf.n; perf.acc = 0; perf.n = 0;
-    if (avg > 25) { if (++perf.bad >= 2) { perf.bad = 0; perfSet(perf.level + 1); perf.t0 = now; } } else perf.bad = 0;   // dua jendela berturut-turut buruk -> turun level
-  }
-  const perfGrace = () => { perf.t0 = performance.now(); perf.acc = 0; perf.n = 0; perf.bad = 0; };
-  document.addEventListener('DOMContentLoaded', () => {});
-  document.addEventListener('visibilitychange', () => {
-    perf.hidden = document.hidden;
-    document.documentElement.classList.toggle('is-hidden', document.hidden);
-    perf.t0 = performance.now(); perf.acc = 0; perf.n = 0;
-  });
+  // tab disembunyikan: animasi CSS dijeda (tidak terlihat, jadi tidak ada bedanya)
+  document.addEventListener('visibilitychange', () => document.documentElement.classList.toggle('is-hidden', document.hidden));
 
   /* ---------- util ---------- */
   const store = {
@@ -285,7 +263,6 @@
     document.body.classList.remove('is-playing');
     placeArm(); renderDisplay(); renderSeats(); announce();
   });
-  ['loadstart', 'emptied', 'seeking', 'playing'].forEach((ev) => audio.addEventListener(ev, perfGrace));
   audio.addEventListener('ended', () => next(true));
   audio.addEventListener('timeupdate', () => {
     const d = audio.duration || 0;
@@ -412,7 +389,7 @@
   }
   const askParallax = () => { if (!pxRaf) pxRaf = requestAnimationFrame(applyParallax); };
   el.stage.addEventListener('pointermove', (e) => {
-    if (e.pointerType === 'touch' || perf.level >= 2) return;
+    if (e.pointerType === 'touch') return;
     const r = el.stage.getBoundingClientRect();
     pxT = (e.clientX - r.left) / r.width - 0.5;
     pyT = (e.clientY - r.top) / r.height - 0.5;
@@ -657,11 +634,10 @@
     }
   }
 
-  let fftTick = false;
   function computeBars(dt, now, playing) {
     if (playing) {
       if (analyser && bLo) {
-        if (!perf.level || (fftTick = !fftTick)) analyser.getByteFrequencyData(freq);   // mode hemat: FFT tiap 2 frame
+        analyser.getByteFrequencyData(freq);
         for (let i = 0; i < BANDS; i++) {
           let v;
           if (bHi[i] - bLo[i] >= 2) { v = 0; for (let b = bLo[i]; b <= bHi[i]; b++) if (freq[b] > v) v = freq[b]; }
@@ -706,7 +682,7 @@
 
   // riak melebar dari balik alat setiap ketukan bass
   function spawnRipple(str) {
-    if (fxRip >= (perf.level ? 4 : 6)) return;
+    if (fxRip >= 10) return;
     fxRip++;
     const r = document.createElement('i');
     r.className = 'ripple';
@@ -717,7 +693,7 @@
   }
   // not / titik kecil melayang keluar dari balik alat ke arah kursi
   function spawnNote() {
-    if (fxNote >= (perf.level ? 10 : 22)) return;
+    if (fxNote >= 30) return;
     fxNote++;
     const p = document.createElement('span');
     p.className = 'note';
@@ -736,10 +712,8 @@
     el.fx.append(p);
   }
   function frame(now) {
-    const rawDt = now - last;
-    const dt = Math.min(0.05, rawDt / 1000);
+    const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    perfSample(rawDt, now);
 
     const playing = !audio.paused && state.tracks.length > 0;
     const target = playing ? 200 : 0;                       // ~33 rpm
@@ -771,11 +745,9 @@
     hiS += (Math.min(1, (tre / (BANDS - 28)) * 3) - hiS) * Math.min(1, dt * 8);
     if (!calm) {
       if (playing) {
-        if (kick > 0.5 && now - lastRipple > (perf.level ? 520 : 320)) { lastRipple = now; spawnRipple(kick); }
-        if (perf.level < 2) {
-          noteAcc += enS * dt * (perf.level ? 3.5 : 7);
-          while (noteAcc >= 1) { noteAcc -= 1; spawnNote(); }
-        } else noteAcc = 0;
+        if (kick > 0.5 && now - lastRipple > 320) { lastRipple = now; spawnRipple(kick); }
+        noteAcc += enS * dt * 7;
+        while (noteAcc >= 1) { noteAcc -= 1; spawnNote(); }
       } else noteAcc = 0;
     }
 
@@ -785,7 +757,7 @@
     const clkBusy = playing || CLK.extra !== 0 || CLK.vel !== 0 || CLK.fin || CLK.resetting || CLK.tick !== 0
       || Math.abs(SEC.count * 6 - SEC.x) > 0.02 || Math.abs(SEC.v) > 0.05
       || new Date().getSeconds() !== SEC.last || realMin() !== CLK.last;
-    const clkGap = clkBusy ? (perf.level >= 2 ? 1 / 20 : perf.level ? 1 / 30 : 0) : 1 / 10;
+    const clkGap = clkBusy ? 0 : 1 / 10;
     if (clkAcc >= clkGap - 0.002) { stepClock(Math.min(0.1, clkAcc), playing && !calm); clkAcc = 0; }
 
     requestAnimationFrame(frame);

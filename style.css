@@ -230,7 +230,6 @@ button.avatar { cursor: pointer; }
 .avatar .ini { position: absolute; left: calc(50% - var(--sw) * .95); top: calc(50% + var(--sw) * .25); min-width: 15px; height: 15px; padding: 0 4px; display: grid; place-items: center; border-radius: 8px; font-size: 9px; font-weight: 700; line-height: 1; background: hsl(var(--h) 55% 42%); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
 .seat.empty .avatar .ini { display: none; }
 .avatar .ins svg { position: relative; width: 100%; height: 100%; display: block; overflow: visible; filter: drop-shadow(0 2px 3px rgba(0,0,0,.18)); }
-.seat.on .avatar .ins svg { filter: none; }   /* isi SVG bergerak tiap frame: filter akan dihitung ulang terus */
 .seat.empty .avatar .ins { display: none; }
 .avatar .d { transform-box: fill-box; transform-origin: 50% 50%; }
 /* saat lagu diputar: lingkarannya loncat memukul drum satu per satu, drum yang kena berdenyut / cymbal bergoyang */
@@ -635,18 +634,5 @@ body.dragging .drop { display: grid; }
 }
 .chatbar input:focus { border-color: var(--ink); }
 
-/* ---------- mode hemat otomatis (dipasang app.js kalau FPS turun) ---------- */
-/* level 1: kurangi kerja dekoratif yang paling mahal, tampilan tetap sama */
-html[data-perf="1"] .bg { animation: none; }
-html[data-perf="1"] .s-glow { display: none; }
-html[data-perf="1"] .turntable { transform: none !important; }   /* tanpa miring 3D */
-html[data-perf="1"] .tonearm, html[data-perf="1"] .avatar .ins svg { filter: none; }
-/* level 2: HP/PC lawas — matikan efek partikel, latar diam */
-html[data-perf="2"] .bg { animation: none; }
-html[data-perf="2"] .note, html[data-perf="2"] .s-ripple, html[data-perf="2"] .s-note, html[data-perf="2"] .s-glow { display: none; }
-html[data-perf="2"] .seat.on .ins::before { animation: none; }
-/* level 2: isi SVG kursi pendengar lain berhenti bergerak (kursimu tetap hidup) */
-html[data-perf="2"] .seat:not(.me).on .avatar .d, html[data-perf="2"] .seat:not(.me).on .avatar [class*="i-"] * { animation: none; }
-html[data-perf="2"] .brand-dot, html[data-perf="2"] .eq i { animation: none; }
 /* tab disembunyikan: hentikan semua animasi CSS yang berjalan terus */
 html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-play-state: paused !important; }
