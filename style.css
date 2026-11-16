@@ -675,32 +675,38 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 
 /* ---------- hadiah ---------- */
 .gfx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 60; }
-.giftmenu {
-  position: fixed; z-index: 70; box-sizing: border-box; padding: 10px 10px 8px;
-  background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 18px;
-  box-shadow: 0 10px 34px rgba(0,0,0,.22);
-  opacity: 0; transform: translateY(6px) scale(.94); transform-origin: 50% 100%;
-  transition: opacity .18s, transform .22s cubic-bezier(.3,1.4,.5,1);
-}
-.giftmenu[hidden] { display: none; }
-.giftmenu.show { opacity: 1; transform: none; }
-.gm-t { font-size: 11px; font-weight: 600; color: var(--mute); text-align: center; margin: 0 4px 8px; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gm-b { display: flex; gap: 4px; }
-.gm-i { display: grid; justify-items: center; gap: 5px; width: 58px; padding: 6px 2px; border: 0; border-radius: 12px; background: transparent; color: var(--ink); font: inherit; font-size: 11px; font-weight: 500; cursor: pointer; transition: background .12s, transform .12s; }
-.gm-i:hover, .gm-i:focus-visible { background: var(--soft); outline: none; }
-.gm-i:active { transform: scale(.92); }
-.gm-i i { width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff 0, hsl(var(--h) 100% 72%) 32%, hsl(var(--h) 90% 48%) 100%); box-shadow: 0 0 0 3px hsl(var(--h) 100% 60% / .18), 0 0 14px hsl(var(--h) 100% 60% / .55); }
 
 /* ---------- duet ---------- */
-.gm-duet { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; box-sizing: border-box; margin-top: 6px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 12px; background: transparent; color: var(--ink); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; transition: background .12s, transform .12s; }
-.gm-duet:hover, .gm-duet:focus-visible { background: var(--soft); outline: none; }
-.gm-duet:active { transform: scale(.97); }
-.gm-duet i { position: relative; width: 27px; height: 16px; flex: none; }
-.gm-duet i::before, .gm-duet i::after { content: ''; position: absolute; top: 0; width: 16px; height: 16px; border-radius: 50%; }
-.gm-duet i::before { left: 0; background: radial-gradient(circle at 35% 30%, #fff 0, hsl(190 100% 70%) 35%, hsl(200 90% 48%)); box-shadow: 0 0 8px hsl(195 100% 60% / .6); }
-.gm-duet i::after { right: 0; background: radial-gradient(circle at 35% 30%, #fff 0, hsl(330 100% 74%) 35%, hsl(335 90% 52%)); box-shadow: 0 0 8px hsl(330 100% 65% / .6); }
 .seat.duet .avatar .ins { animation: duet-bob .55s ease-in-out infinite alternate; }
 .seat.duet .avatar .ins::before { animation: duet-glow .55s ease-in-out infinite alternate; }
 @keyframes duet-bob { from { transform: rotate(-4deg) scale(1); } to { transform: rotate(4deg) scale(1.08); } }
 @keyframes duet-glow { from { box-shadow: 0 0 0 2px hsl(var(--h) 80% 60% / .25), 0 2px 8px rgba(0,0,0,.18); } to { box-shadow: 0 0 0 10px hsl(var(--h) 80% 60% / .12), 0 0 22px hsl(var(--h) 90% 60% / .7); } }
 @media (prefers-reduced-motion: reduce) { .seat.duet .avatar .ins, .seat.duet .avatar .ins::before { animation: none; } }
+
+/* ---------- menu hadiah: senada dengan gelembung chat (kartu, bingkai warna avatar, ekor) ---------- */
+.giftmenu {
+  position: fixed; z-index: 70; padding: 9px 10px 10px; border-radius: 14px;
+  background: var(--card); color: var(--ink); border: 2px solid hsl(var(--h, 200) 60% 58%);
+  box-shadow: 0 3px 10px rgba(0,0,0,.16);
+  opacity: 0; transform: translateY(6px) scale(.88); transform-origin: var(--tx, 50%) 100%;
+  transition: opacity .25s, transform .35s cubic-bezier(.3,1.5,.5,1);
+}
+.giftmenu[hidden] { display: none; }
+.giftmenu.show { opacity: 1; transform: none; }
+.giftmenu[data-pos="below"] { transform-origin: var(--tx, 50%) 0; }
+.giftmenu::after {                                            /* ekor menunjuk avatar */
+  content: ""; position: absolute; left: var(--tx, 50%); width: 9px; height: 9px; translate: -50% 0; rotate: 45deg;
+  background: var(--card); border-right: 2px solid hsl(var(--h, 200) 60% 58%); border-bottom: 2px solid hsl(var(--h, 200) 60% 58%); bottom: -6px;
+}
+.giftmenu[data-pos="below"]::after { bottom: auto; top: -6px; rotate: 225deg; }
+.gm-t { margin: 0 2px 8px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; color: var(--mute); font-size: 11px; font-weight: 500; }
+.gm-b { display: flex; gap: 6px; justify-content: center; }
+.gm-i { display: grid; justify-items: center; gap: 4px; width: 50px; padding: 2px 0 0; border: 0; background: none; color: var(--mute); font-size: 10px; font-weight: 500; transition: color .15s; }
+.gm-ic { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 50%; background: var(--soft); color: var(--ink); transition: transform .25s cubic-bezier(.3,1.5,.5,1), background .2s, border-color .2s, color .2s; }
+.gm-ic svg, .gm-duet svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.gm-i:hover .gm-ic, .gm-i:focus-visible .gm-ic { transform: scale(1.1) rotate(-6deg); background: hsl(var(--g) 85% 58%); border-color: transparent; color: #fff; }
+.gm-i:hover, .gm-i:focus-visible { color: var(--ink); outline: none; }
+.gm-i:active .gm-ic { transform: scale(.9); }
+.gm-duet { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 9px; padding: 7px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--soft); color: var(--ink); font-size: 12px; transition: transform .25s, background .3s; }
+.gm-duet:hover { transform: scale(1.03) rotate(-1deg); }
+.gm-duet:active { transform: scale(.96); }

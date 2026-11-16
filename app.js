@@ -1509,17 +1509,18 @@
   }
 
   /* ---------- hadiah: ketuk avatar teman, pilih hadiah, bola cahaya melesat lalu meledak saat kena ---------- */
+  const ICON = (d) => '<svg viewBox="0 0 24 24" aria-hidden="true">' + d + '</svg>';
   const GIFTS = [
-    { id: 'star', name: 'Bintang', h: 46 },
-    { id: 'fire', name: 'Api', h: 14 },
-    { id: 'ice', name: 'Kristal', h: 194 },
-    { id: 'love', name: 'Cinta', h: 330 }
+    { id: 'star', name: 'Bintang', h: 46, ic: ICON('<path d="M12 3.2l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17.2l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>') },
+    { id: 'fire', name: 'Api', h: 14, ic: ICON('<path d="M12 3c.8 3.2 5.2 5.3 5.2 10A5.2 5.2 0 0 1 6.8 13c0-1.9.9-3.2 2-4.2.3 1.2 1 2 2 2.2-.6-3 0-6 1.2-8z"/>') },
+    { id: 'ice', name: 'Kristal', h: 194, ic: ICON('<path d="M6.5 4h11l3.5 5.2-9 10.8-9-10.8z"/><path d="M3 9.2h18M9.5 4L8 9.2l4 10.8 4-10.8L14.5 4"/>') },
+    { id: 'love', name: 'Cinta', h: 330, ic: ICON('<path d="M12 20s-7.5-4.6-7.5-10.2A4.2 4.2 0 0 1 12 7.4a4.2 4.2 0 0 1 7.5 2.4C19.5 15.4 12 20 12 20z"/>') }
   ];
   const GIFT_GAP = 2500;                                       // jeda antar hadiah, supaya tidak spam
   let giftLast = 0, gmId = null, gmOpenedAt = 0;
   const gm = document.createElement('div');
   gm.className = 'giftmenu'; gm.hidden = true;
-  gm.innerHTML = '<div class="gm-t"></div><div class="gm-b">' + GIFTS.map((g) => '<button type="button" class="gm-i" data-g="' + g.id + '" style="--h:' + g.h + '"><i></i><span>' + g.name + '</span></button>').join('') + '</div><button type="button" class="gm-duet"><i></i><span>Ajak duet</span></button>';
+  gm.innerHTML = '<div class="gm-t"></div><div class="gm-b">' + GIFTS.map((g) => '<button type="button" class="gm-i" data-g="' + g.id + '" style="--g:' + g.h + '"><span class="gm-ic">' + g.ic + '</span><span>' + g.name + '</span></button>').join('') + '</div><button type="button" class="gm-duet">' + ICON('<path d="M9 18V6.5l10-2V16"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>') + '<span>Ajak duet</span></button>';
   document.body.append(gm);
   const gmT = gm.querySelector('.gm-t');
   function closeGiftMenu() { gm.classList.remove('show'); gm.hidden = true; gmId = null; }
@@ -1531,10 +1532,14 @@
     gmT.textContent = 'Hadiah untuk ' + (p ? p.name : 'teman');
     gm.hidden = false;
     const r = s.av.getBoundingClientRect(), w = gm.offsetWidth, h = gm.offsetHeight, vw = document.documentElement.clientWidth;
-    const cx = r.left + r.width / 2, cy = r.top + r.height / 2, gap = Math.max(26, r.height * .8);
-    let top = cy - gap - h; if (top < 8) top = cy + gap;
-    gm.style.left = Math.max(8, Math.min(vw - w - 8, cx - w / 2)) + 'px';
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2, gap = Math.max(34, r.height * .85);
+    let top = cy - gap - h, below = false; if (top < 8) { top = cy + gap; below = true; }
+    const left = Math.max(8, Math.min(vw - w - 8, cx - w / 2));
+    gm.dataset.pos = below ? 'below' : 'above';
+    gm.style.left = left + 'px';
     gm.style.top = Math.max(8, Math.min(window.innerHeight - h - 8, top)) + 'px';
+    gm.style.setProperty('--tx', Math.max(16, Math.min(w - 16, cx - left)) + 'px');        // ekor tepat di atas / bawah avatar
+    gm.style.setProperty('--h', s.av.style.getPropertyValue('--h') || '200');             // bingkai memakai warna avatar tujuan
     void gm.offsetWidth; gm.classList.add('show');
   }
   gm.addEventListener('click', (e) => {
