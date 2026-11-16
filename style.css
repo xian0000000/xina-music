@@ -55,6 +55,7 @@ body {
   will-change: transform;
 }
 .bg::before, .bg::after { content: ""; position: absolute; inset: 0; }
+.bg::before, .bg::after { display: none; }   /* halo warna di latar dibuang: glow hanya di dalam lingkaran jam */
 .bg::before { background: radial-gradient(circle at 50% 50%, hsl(var(--mh) 75% 58% / .26), transparent 46%); opacity: var(--en); }
 .bg::after { background: radial-gradient(circle at 72% 34%, hsl(var(--mh2) 80% 60% / .2), transparent 38%); opacity: var(--hi); }
 /* kotak .bg = 160% layar; radius gradient = persen dari setengah diagonalnya. Layer glow dipangkas persis ke lingkaran itu: hasil sama, area komposit jauh lebih kecil */
@@ -166,12 +167,11 @@ h1 small { display: block; color: var(--mute); font-size: 12px; font-weight: 400
 /* cahaya di belakang alat: terang & warnanya ikut lagu */
 .l-glow {
   position: absolute; left: 50%; top: 50%; translate: -50% -50%;
-  width: calc(100cqmin * .96); height: calc(100cqmin * .96); border-radius: 50%;
-  pointer-events: none; --en: .5; --hi: .3;             /* glow diam */
-  scale: .96;
+  width: calc(100cqmin * .994); height: calc(100cqmin * .994); border-radius: 50%;   /* persis selebar lingkaran luar jam (r = 49,7 dari 100) */
+  pointer-events: none; overflow: hidden; --en: .5; --hi: .3;                         /* glow diam, tidak berdenyut */
 }
 .l-glow::before, .l-glow::after { content: ""; position: absolute; inset: 0; border-radius: 50%; }
-.l-glow::before { background: radial-gradient(circle, hsl(var(--mh) 85% 60% / .5) 0%, hsl(var(--mh) 85% 60% / .18) 38%, transparent 68%); opacity: var(--en); }
+.l-glow::before { background: radial-gradient(closest-side, hsl(var(--mh) 85% 60% / .5) 0%, hsl(var(--mh) 85% 60% / .2) 55%, transparent 100%); opacity: var(--en); }
 .l-glow::after { background: radial-gradient(circle at 65% 40%, hsl(var(--mh2) 85% 62% / .3), transparent 50%); opacity: var(--hi); }
 
 /* riak tiap ketukan + not melayang: keluar dari balik alat */
@@ -643,7 +643,7 @@ html[data-perf="1"] .turntable { transform: none !important; }   /* tanpa miring
 html[data-perf="1"] .tonearm, html[data-perf="1"] .avatar .ins svg { filter: none; }
 /* level 2: HP/PC lawas — matikan efek partikel, latar diam */
 html[data-perf="2"] .bg { animation: none; }
-html[data-perf="2"] .ripple, html[data-perf="2"] .note, html[data-perf="2"] .s-ripple, html[data-perf="2"] .s-note, html[data-perf="2"] .s-glow { display: none; }
+html[data-perf="2"] .note, html[data-perf="2"] .s-ripple, html[data-perf="2"] .s-note, html[data-perf="2"] .s-glow { display: none; }
 html[data-perf="2"] .seat.on .ins::before { animation: none; }
 /* level 2: isi SVG kursi pendengar lain berhenti bergerak (kursimu tetap hidup) */
 html[data-perf="2"] .seat:not(.me).on .avatar .d, html[data-perf="2"] .seat:not(.me).on .avatar [class*="i-"] * { animation: none; }

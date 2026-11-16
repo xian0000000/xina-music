@@ -80,6 +80,8 @@
     const avg = perf.acc / perf.n; perf.acc = 0; perf.n = 0;
     if (avg > 25) { if (++perf.bad >= 2) { perf.bad = 0; perfSet(perf.level + 1); perf.t0 = now; } } else perf.bad = 0;   // dua jendela berturut-turut buruk -> turun level
   }
+  const perfGrace = () => { perf.t0 = performance.now(); perf.acc = 0; perf.n = 0; perf.bad = 0; };
+  document.addEventListener('DOMContentLoaded', () => {});
   document.addEventListener('visibilitychange', () => {
     perf.hidden = document.hidden;
     document.documentElement.classList.toggle('is-hidden', document.hidden);
@@ -283,6 +285,7 @@
     document.body.classList.remove('is-playing');
     placeArm(); renderDisplay(); renderSeats(); announce();
   });
+  ['loadstart', 'emptied', 'seeking', 'playing'].forEach((ev) => audio.addEventListener(ev, perfGrace));
   audio.addEventListener('ended', () => next(true));
   audio.addEventListener('timeupdate', () => {
     const d = audio.duration || 0;
@@ -697,22 +700,25 @@
 
   /* ---------- animasi: piringan berputar ---------- */
   let rot = 0, speed = 0, last = performance.now(), lv = 0, lastLv = -1, kick = 0, prevBass = 0;
+  let fxRip = 0, fxNote = 0;
   let enS = 0, hiS = 0, lastEn = -1, lastHi = -1, lastRipple = 0, noteAcc = 0, clkAcc = 0;
   const GLYPHS = ['♪', '♫', '♪', '•'];
 
   // riak melebar dari balik alat setiap ketukan bass
   function spawnRipple(str) {
-    if (el.fx.childElementCount > (perf.level ? 12 : 26)) return;
+    if (fxRip >= (perf.level ? 4 : 6)) return;
+    fxRip++;
     const r = document.createElement('i');
     r.className = 'ripple';
     r.style.setProperty('--ph', (322 + Math.random() * 26).toFixed(0));      // pink -> magenta
     r.style.setProperty('--o', (0.35 + 0.45 * Math.min(1, str)).toFixed(2));
-    r.addEventListener('animationend', () => r.remove());
+    r.addEventListener('animationend', () => { fxRip--; r.remove(); });
     el.fx.append(r);
   }
   // not / titik kecil melayang keluar dari balik alat ke arah kursi
   function spawnNote() {
-    if (el.fx.childElementCount > (perf.level ? 12 : 26)) return;
+    if (fxNote >= (perf.level ? 10 : 22)) return;
+    fxNote++;
     const p = document.createElement('span');
     p.className = 'note';
     p.style.setProperty('--ph', (322 + Math.random() * 26).toFixed(0));
@@ -726,7 +732,7 @@
     p.style.setProperty('--dur', (2.6 + Math.random() * 1.6).toFixed(2) + 's');
     p.style.setProperty('--sz', (10 + Math.random() * 8).toFixed(0) + 'px');
     p.textContent = GLYPHS[(Math.random() * GLYPHS.length) | 0];
-    p.addEventListener('animationend', () => p.remove());
+    p.addEventListener('animationend', () => { fxNote--; p.remove(); });
     el.fx.append(p);
   }
   function frame(now) {
@@ -764,10 +770,12 @@
     enS += (Math.min(1, (tot / BANDS) * 2.4) - enS) * Math.min(1, dt * 5);
     hiS += (Math.min(1, (tre / (BANDS - 28)) * 3) - hiS) * Math.min(1, dt * 8);
     if (!calm) {
-      if (playing && perf.level < 2) {
+      if (playing) {
         if (kick > 0.5 && now - lastRipple > (perf.level ? 520 : 320)) { lastRipple = now; spawnRipple(kick); }
-        noteAcc += enS * dt * (perf.level ? 3.5 : 7);
-        while (noteAcc >= 1) { noteAcc -= 1; spawnNote(); }
+        if (perf.level < 2) {
+          noteAcc += enS * dt * (perf.level ? 3.5 : 7);
+          while (noteAcc >= 1) { noteAcc -= 1; spawnNote(); }
+        } else noteAcc = 0;
       } else noteAcc = 0;
     }
 
