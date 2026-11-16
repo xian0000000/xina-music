@@ -501,11 +501,52 @@
       CLK.vel += CLK.acc * h;
     }
   }
+  /* ---------- suara tik-tok jam ----------
+     hanya berbunyi di "mode jam": lagu tidak diputar dan jarum sudah mendarat di waktu asli. Tiap detik satu ketukan,
+     bergantian tik (tinggi) dan tok (rendah), tepat saat jarum detik melompat. Satu ketukan juga saat jam baru mendarat
+     setelah lagu berhenti. Volumenya mengikuti knob (0 = senyap). AudioContext baru dibuat setelah interaksi pertama
+     (aturan autoplay browser), jadi sebelum itu halaman tetap senyap. */
+  let tctx = null, tnoise = null, tflip = false, clockMode = false;
+  function unlockTick() {
+    try {
+      if (!tctx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        tctx = new AC();
+        tnoise = tctx.createBuffer(1, Math.floor(tctx.sampleRate * 0.05), tctx.sampleRate);
+        const d = tnoise.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      }
+      if (tctx.state === 'suspended') tctx.resume();
+    } catch (e) { tctx = null; }
+  }
+  ['pointerdown', 'keydown', 'touchend'].forEach((ev) => window.addEventListener(ev, unlockTick, { passive: true }));
+  function tickSound(ctx, dest, noise, t, tock, peak) {
+    // klik: noise pendek dibentuk band-pass (tik lebih tinggi dari tok)
+    const src = ctx.createBufferSource(); src.buffer = noise;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = tock ? 2300 : 3100; bp.Q.value = 2.5;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + 0.001); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.035);
+    src.connect(bp); bp.connect(g); g.connect(dest); src.start(t); src.stop(t + 0.05);
+    // ketukan kayu kecil di bawah klik
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(tock ? 820 : 1100, t); o.frequency.exponentialRampToValueAtTime(tock ? 520 : 700, t + 0.03);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(peak * 0.5, t + 0.001); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+    o.connect(og); og.connect(dest); o.start(t); o.stop(t + 0.06);
+  }
+  function playTick(soft) {
+    if (!tctx || tctx.state !== 'running') return;
+    const vol = Math.min(1, state.vol);
+    if (vol <= 0) return;
+    tickSound(tctx, tctx.destination, tnoise, tctx.currentTime + 0.005, tflip, 0.3 * vol * (soft ? 0.75 : 1));
+    tflip = !tflip;
+  }
   // jarum detik: tiap detik pindah tepat ke garis berikutnya (pegas sedikit kebablasan seperti jam kuarsa), lalu diam di garis
   function stepSeconds(dt) {
     const s = new Date().getSeconds();
     if (SEC.last < 0) { SEC.last = s; SEC.count = s; SEC.x = s * 6; SEC.x0 = SEC.x; }
-    if (s !== SEC.last) { SEC.count += (s - SEC.last + 60) % 60; SEC.last = s; }
+    if (s !== SEC.last) { SEC.count += (s - SEC.last + 60) % 60; SEC.last = s; if (clockMode) playTick(false); }
     const n = Math.max(1, Math.ceil(dt / 0.008)), h = dt / n, w = 38, z = 0.55;
     for (let i = 0; i < n; i++) { SEC.v += (w * w * (SEC.count * 6 - SEC.x) - 2 * z * w * SEC.v) * h; SEC.x += SEC.v * h; }
     const ang = (SEC.x + CLK.extra * 6 * SEC_RATIO) % 360, str = 'rotate(' + ang.toFixed(2) + 'deg)';
@@ -565,6 +606,10 @@
       }
     }
     if (integrate && CLK.vel) CLK.extra += CLK.vel * dt;
+    // mode jam = lagu tidak diputar dan jarum sudah di waktu asli (tidak sedang ngebut / mundur / mendarat)
+    const idleClock = (audio.paused || !state.tracks.length) && !CLK.resetting && CLK.extra === 0 && CLK.vel === 0 && !CLK.fin;
+    if (idleClock && !clockMode) playTick(true);          // baru masuk mode jam: satu ketukan pendaratan
+    clockMode = idleClock;
     drawClock((((rmin + CLK.extra + CLK.tick) % 720) + 720) % 720);
     stepSeconds(dt);
     // gir digerakkan langsung oleh jarum menit (seperti jam mekanik): maju, ngebut, mundur, dan loncat per menit ikut sama persis
@@ -1674,7 +1719,7 @@
   const hc = (h, l, a) => 'hsl(' + Math.round(h) + ' 100% ' + (gLight ? Math.min(l, 56) : l) + '%' + (a == null ? ')' : ' / ' + a + ')');
 
   /* ---------- duet: dua avatar disambung pita cahaya bergelombang + nada mengalir, keduanya ikut bergoyang ---------- */
-  const DUET_MS = 12000, DUET_MAX = 4, duets = [];
+  const DUET_MS = 30000, DUET_MAX = 4, duets = [];
   let duetOn = false;
   const edgeD = new Map(), seenGroups = new Set();
   // siapa saja yang tersambung (langsung / lewat teman) dengan startId, termasuk pasangan calon `extra`

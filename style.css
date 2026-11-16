@@ -731,78 +731,74 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 }
 
 /* tamborin: kecepatan goyang tetap, tapi lebar goyangannya mengikuti treble; hi-hat memberi hentakan */
-.l-seats.react .seat.on .avatar .i-tamb { --tm: calc(.1 + var(--hi, 0) * .5 + var(--hat, 0) * .4); }
+.l-seats.react .seat.on .avatar .i-tamb { --tm: calc(.7 + var(--hi, 0) * .25 + var(--hat, 0) * .25); }
 .l-seats.react .seat.on .avatar .i-tamb .tamb-g { animation-name: tamb-shake-r; }
 .l-seats.react .seat.on .avatar .i-tamb .jg { animation-name: jing-j-r; }
 @keyframes tamb-shake-r {
-  from { transform: rotate(calc(var(--tm, .1) * -9deg)) translateX(calc(var(--tm, .1) * -1.3px)); }
-  to   { transform: rotate(calc(var(--tm, .1) * 9deg)) translateX(calc(var(--tm, .1) * 1.3px)); }
+  from { transform: rotate(calc(var(--tm, .8) * -9deg)) translateX(calc(var(--tm, .8) * -1.3px)); }
+  to   { transform: rotate(calc(var(--tm, .8) * 9deg)) translateX(calc(var(--tm, .8) * 1.3px)); }
 }
 @keyframes jing-j-r {
-  from { transform: translateY(calc(var(--tm, .1) * -2.2px)); }
-  to   { transform: translateY(calc(var(--tm, .1) * 2.2px)); }
+  from { transform: translateY(calc(var(--tm, .8) * -2.2px)); }
+  to   { transform: translateY(calc(var(--tm, .8) * 2.2px)); }
 }
-.l-seats.react .seat.on .ins:has(.i-tamb)::before {
-  animation: none;
-  transform: translateY(calc(var(--hat, 0) * -14%)) scale(calc(1.1 - var(--hat, 0) * .14), calc(.9 + var(--hat, 0) * .15));
-}
+.l-seats.react .seat.on .ins:has(.i-tamb)::before { translate: 0 calc(var(--hat, 0) * -14%); }
 
 /* ===== alat melodi ikut mid (vokal / melodi): mic, trumpet, ukulele, pianika, harmonika =====
    --mid = energi mid yang dihaluskan (lebar goyangan), --note = lonjakan tiap nada baru (hentakan).
-   Kecepatan goyang tetap dari animasi lama; yang berubah hanya amplitudonya. Lagu hening = alat nyaris diam. */
-.l-seats.react .seat.on .avatar :is(.i-mic, .i-trump, .i-uke, .i-pika, .i-harp) { --tm: calc(.1 + var(--mid, 0) * .65 + var(--note, 0) * .25); }
+   Kecepatan goyang tetap dari animasi lama dan SELALU jalan (amplitudo dasar 80%); musik menambah amplitudo, dan tekanan katup / tuts
+   ditambahkan lewat properti `translate` supaya tidak menggantikan animasi dasarnya. */
+.l-seats.react .seat.on .avatar :is(.i-mic, .i-trump, .i-uke, .i-pika, .i-harp) { --tm: calc(.8 + var(--mid, 0) * .3 + var(--note, 0) * .2); }
 
 /* bola di belakang alat meloncat di tiap nada */
 .l-seats.react .seat.on .ins:is(:has(.i-mic), :has(.i-trump), :has(.i-uke), :has(.i-pika), :has(.i-harp))::before {
-  animation: none;
   --bn: max(var(--note, 0), calc(var(--mid, 0) * .5));
-  transform: translateY(calc(var(--bn) * -18%)) scale(calc(1.1 - var(--bn) * .14), calc(.9 + var(--bn) * .15));
+  translate: 0 calc(var(--bn) * -14%);
 }
 
 /* mic: miring mengikuti vokal */
 .l-seats.react .seat.on .avatar .i-mic .mic-in { animation-name: mic-swing-r; }
 @keyframes mic-swing-r {
-  from { transform: rotate(calc(var(--tm, .1) * -10deg)) translateY(calc(var(--tm, .1) * 1px)); }
-  to   { transform: rotate(calc(var(--tm, .1) * 9deg)) translateY(calc(var(--tm, .1) * -3px)) scale(calc(1 + var(--tm, .1) * .05)); }
+  from { transform: rotate(calc(var(--tm, .8) * -10deg)) translateY(calc(var(--tm, .8) * 1px)); }
+  to   { transform: rotate(calc(var(--tm, .8) * 9deg)) translateY(calc(var(--tm, .8) * -3px)) scale(calc(1 + var(--tm, .8) * .05)); }
 }
 
 /* trumpet: badan naik-turun sesuai energi, tiga katup ditekan oleh nada yang berbeda */
 .l-seats.react .seat.on .avatar .i-trump .tr-in { animation-name: tr-bob-r; }
 @keyframes tr-bob-r {
   0%, 100% { transform: translate(0, 0) rotate(0); }
-  50% { transform: translate(calc(var(--tm, .1) * 3px), calc(var(--tm, .1) * -3px)) rotate(calc(var(--tm, .1) * -3deg)); }
+  50% { transform: translate(calc(var(--tm, .8) * 3px), calc(var(--tm, .8) * -3px)) rotate(calc(var(--tm, .8) * -3deg)); }
 }
-.l-seats.react .seat.on .avatar .i-trump .vl { animation: none; transform: translateY(calc(var(--snrA, 0) * 5px)); }
-.l-seats.react .seat.on .avatar .i-trump .vl2 { transform: translateY(calc(var(--snrB, 0) * 5px)); }
-.l-seats.react .seat.on .avatar .i-trump .vl3 { transform: translateY(calc(var(--note, 0) * 5px)); }
+.l-seats.react .seat.on .avatar .i-trump .vl { translate: 0 calc(var(--snrA, 0) * 4px); }
+.l-seats.react .seat.on .avatar .i-trump .vl2 { translate: 0 calc(var(--snrB, 0) * 4px); }
+.l-seats.react .seat.on .avatar .i-trump .vl3 { translate: 0 calc(var(--note, 0) * 4px); }
 
 /* ukulele: goyang mengikuti mid, senar berdengung mengikuti treble + mid */
 .l-seats.react .seat.on .avatar .i-uke .uk-in { animation-name: uk-sway-r; }
-.l-seats.react .seat.on .avatar .i-uke .uk-s { animation-name: uk-buzz-r; --ub: calc(.1 + var(--hi, 0) * .5 + var(--mid, 0) * .4); }
+.l-seats.react .seat.on .avatar .i-uke .uk-s { animation-name: uk-buzz-r; --ub: calc(.7 + var(--hi, 0) * .25 + var(--mid, 0) * .2); }
 @keyframes uk-sway-r {
-  from { transform: rotate(calc(var(--tm, .1) * -6deg)) translateY(calc(var(--tm, .1) * 1px)); }
-  to   { transform: rotate(calc(var(--tm, .1) * 5deg)) translateY(calc(var(--tm, .1) * -2px)); }
+  from { transform: rotate(calc(var(--tm, .8) * -6deg)) translateY(calc(var(--tm, .8) * 1px)); }
+  to   { transform: rotate(calc(var(--tm, .8) * 5deg)) translateY(calc(var(--tm, .8) * -2px)); }
 }
 @keyframes uk-buzz-r {
-  from { transform: translateX(calc(var(--ub, .1) * -.9px)); }
-  to   { transform: translateX(calc(var(--ub, .1) * .9px)); }
+  from { transform: translateX(calc(var(--ub, .7) * -.9px)); }
+  to   { transform: translateX(calc(var(--ub, .7) * .9px)); }
 }
 
 /* pianika: goyang mengikuti mid, empat kelompok tuts ditekan bergantian oleh nada / hi-hat */
 .l-seats.react .seat.on .avatar .i-pika .pi-in { animation-name: pi-sway-r; }
 @keyframes pi-sway-r {
-  from { transform: rotate(calc(var(--tm, .1) * -4deg)) translateY(calc(var(--tm, .1) * 1px)); }
-  to   { transform: rotate(calc(var(--tm, .1) * 4deg)) translateY(calc(var(--tm, .1) * -2px)); }
+  from { transform: rotate(calc(var(--tm, .8) * -4deg)) translateY(calc(var(--tm, .8) * 1px)); }
+  to   { transform: rotate(calc(var(--tm, .8) * 4deg)) translateY(calc(var(--tm, .8) * -2px)); }
 }
-.l-seats.react .seat.on .avatar .i-pika .pk { animation: none; }
-.l-seats.react .seat.on .avatar .i-pika .pk0 { transform: translateY(calc(var(--snrA, 0) * 2px)); }
-.l-seats.react .seat.on .avatar .i-pika .pk1 { transform: translateY(calc(var(--snrB, 0) * 2px)); }
-.l-seats.react .seat.on .avatar .i-pika .pk2 { transform: translateY(calc(var(--note, 0) * 2px)); }
-.l-seats.react .seat.on .avatar .i-pika .pk3 { transform: translateY(calc(var(--hat, 0) * 2px)); }
+.l-seats.react .seat.on .avatar .i-pika .pk0 { translate: 0 calc(var(--snrA, 0) * 1.5px); }
+.l-seats.react .seat.on .avatar .i-pika .pk1 { translate: 0 calc(var(--snrB, 0) * 1.5px); }
+.l-seats.react .seat.on .avatar .i-pika .pk2 { translate: 0 calc(var(--note, 0) * 1.5px); }
+.l-seats.react .seat.on .avatar .i-pika .pk3 { translate: 0 calc(var(--hat, 0) * 1.5px); }
 
 /* harmonika: geser kiri-kanan makin lebar saat lagu penuh energi */
 .l-seats.react .seat.on .avatar .i-harp .hm-in { animation-name: hm-slide-r; }
 @keyframes hm-slide-r {
-  from { transform: translateX(calc(var(--tm, .1) * -4px)) rotate(calc(var(--tm, .1) * -2deg)); }
-  to   { transform: translateX(calc(var(--tm, .1) * 4px)) rotate(calc(var(--tm, .1) * 2deg)); }
+  from { transform: translateX(calc(var(--tm, .8) * -4px)) rotate(calc(var(--tm, .8) * -2deg)); }
+  to   { transform: translateX(calc(var(--tm, .8) * 4px)) rotate(calc(var(--tm, .8) * 2deg)); }
 }
