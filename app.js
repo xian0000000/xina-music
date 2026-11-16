@@ -1644,40 +1644,70 @@
     else if (a === me.id) toast('Berduet dengan ' + nm(b));
     if (!gRaf) { gPrev = performance.now(); gRaf = requestAnimationFrame(gLoop); }
   }
+  // gambar not balok: kind 0 = not satu (♪), kind 1 = dua not disambung balok (♫); tegak, hanya sedikit miring
+  function drawNote(c, x, y, sz, kind, tilt) {
+    c.save(); c.translate(x, y); c.rotate(tilt);
+    const hd = (hx, hy) => { c.beginPath(); c.ellipse(hx, hy, sz * .62, sz * .44, -.5, 0, 6.2832); c.fill(); };
+    c.lineCap = 'round'; c.lineJoin = 'round'; c.lineWidth = sz * .2;
+    if (kind === 0) {
+      hd(0, 0);
+      c.beginPath(); c.moveTo(sz * .55, -sz * .1); c.lineTo(sz * .55, -sz * 2.5); c.stroke();
+      c.beginPath(); c.moveTo(sz * .55, -sz * 2.5); c.bezierCurveTo(sz * 1.5, -sz * 2.1, sz * 1.9, -sz * 1.2, sz * 1.2, -sz * .7); c.lineWidth = sz * .3; c.stroke();
+    } else {
+      hd(-sz * .9, sz * .3); hd(sz * .75, 0);
+      c.beginPath(); c.moveTo(-sz * .35, sz * .2); c.lineTo(-sz * .35, -sz * 2.2); c.moveTo(sz * 1.3, -sz * .1); c.lineTo(sz * 1.3, -sz * 2.5); c.stroke();
+      c.beginPath(); c.moveTo(-sz * .35, -sz * 2.2); c.lineTo(sz * 1.3, -sz * 2.5); c.lineTo(sz * 1.3, -sz * 1.8); c.lineTo(-sz * .35, -sz * 1.5); c.closePath(); c.fill();
+    }
+    c.restore();
+  }
   function drawDuet(d, ka, kb, age, now) {
     const A = center(ka), B = center(kb), dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy) || 1;
     const ux = dx / L, uy = dy / L, nx = -uy, ny = ux, R = Math.min(30, L * .3);
     const sx = A.x + ux * R, sy = A.y + uy * R, ex = B.x - ux * R, ey = B.y - uy * R, len = L - 2 * R;
-    const env = Math.max(0, Math.min(1, age / .4, (d.dur - age) / .6));
-    const bow = len * .2 * d.bow, qx = (sx + ex) / 2 + nx * bow * 2, qy = (sy + ey) / 2 + ny * bow * 2;
-    const ha = Number(seatEls[ka].av.style.getPropertyValue('--h')) || 200, hb = Number(seatEls[kb].av.style.getPropertyValue('--h')) || 320;
+    const env = Math.max(0, Math.min(1, age / .5, (d.dur - age) / .8));
+    const bow = len * .22 * d.bow * (1 + .14 * Math.sin(age * 1.3)), qx = (sx + ex) / 2 + nx * bow * 2, qy = (sy + ey) / 2 + ny * bow * 2;   // lengkungnya ikut "bernapas"
+    const ha = Number(seatEls[ka].av.style.getPropertyValue('--h')) || 200;
+    let hb = Number(seatEls[kb].av.style.getPropertyValue('--h')) || 320;
+    hb = ha + ((hb - ha + 540) % 360) - 180;                    // campur warna lewat jalur terpendek di lingkaran warna
+    const hue = (t) => ha + (hb - ha) * t, tone = gLight ? 44 : 68;
     const pt = (t, off) => {
       const m = 1 - t, x = m * m * sx + 2 * m * t * qx + t * t * ex, y = m * m * sy + 2 * m * t * qy + t * t * ey;
       return { x: x + nx * off, y: y + ny * off };
     };
-    const wave = (t, ph) => Math.sin(t * Math.PI) * 9 * env * Math.sin(t * 13 - age * 7 + ph);
-    const grad = gx.createLinearGradient(sx, sy, ex, ey);
-    grad.addColorStop(0, hc(ha, 65, 1)); grad.addColorStop(1, hc(hb, 65, 1));
-    gx.lineCap = 'round'; gx.lineJoin = 'round'; gx.strokeStyle = grad;
-    gx.globalAlpha = .16 * env; gx.lineWidth = 12;                                   // cahaya lembut di bawah pita
-    gx.beginPath(); for (let i = 0; i <= 28; i++) { const q = pt(i / 28, 0); if (i) gx.lineTo(q.x, q.y); else gx.moveTo(q.x, q.y); } gx.stroke();
-    for (const ph of [0, Math.PI]) {                                                 // dua pita yang saling melilit
-      gx.globalAlpha = .9 * env; gx.lineWidth = 2.6;
-      gx.beginPath(); for (let i = 0; i <= 40; i++) { const t = i / 40, q = pt(t, wave(t, ph)); if (i) gx.lineTo(q.x, q.y); else gx.moveTo(q.x, q.y); } gx.stroke();
+    const amp = (7 + 3 * Math.sin(age * 1.7)) * env;
+    const wave = (t, ph) => Math.pow(Math.sin(t * Math.PI), 1.2) * amp * (Math.sin(t * 7 - age * 3.2 + ph) + .45 * Math.sin(t * 13 + age * 2.1 + ph * 1.3)) / 1.45;   // dua gelombang campur: mengalir, tidak kaku
+    gx.lineCap = 'round'; gx.lineJoin = 'round';
+    const N = 56;
+    for (let i = 0; i < N; i++) {                              // cahaya lembut di bawah pita
+      const t0 = i / N, t1 = (i + 1) / N, q0 = pt(t0, 0), q1 = pt(t1, 0);
+      gx.strokeStyle = hc(hue((t0 + t1) / 2), tone + 8, (.16 * env).toFixed(3)); gx.lineWidth = 13 * Math.sin((t0 + t1) / 2 * Math.PI) + 2;
+      gx.beginPath(); gx.moveTo(q0.x, q0.y); gx.lineTo(q1.x, q1.y); gx.stroke();
     }
-    gx.globalAlpha = env;
-    for (let j = 0; j < 4; j++) {                                                    // nada mengalir bolak-balik
-      for (const dir of [1, -1]) {
-        let t = (age * (dir > 0 ? .5 : .42) + j / 4 + (dir > 0 ? 0 : .13)) % 1; if (dir < 0) t = 1 - t;
-        const q = pt(t, wave(t, dir > 0 ? 0 : Math.PI)), h = ha + (hb - ha) * t;
-        gx.fillStyle = hc(h, 90, .35); gx.beginPath(); gx.arc(q.x, q.y, 9, 0, 6.2832); gx.fill();
-        gx.fillStyle = hc(h, 88); star4(gx, q.x, q.y, 5.5, age * 3 + j); gx.fill();
+    for (const ph of [0, Math.PI * .9]) {                      // dua pita saling melilit, ujungnya meruncing
+      let prev = pt(0, 0);
+      for (let i = 1; i <= N; i++) {
+        const t = i / N, q = pt(t, wave(t, ph)), tm = Math.sin(t * Math.PI);
+        gx.strokeStyle = hc(hue(t), tone, (env * (.25 + .7 * tm)).toFixed(3)); gx.lineWidth = .8 + tm * 2.8;
+        gx.beginPath(); gx.moveTo(prev.x, prev.y); gx.lineTo(q.x, q.y); gx.stroke();
+        prev = q;
       }
     }
-    const mid = pt(.5, 0), pr = 7 + Math.sin(age * 6) * 3;                           // denyut di tengah
-    gx.strokeStyle = hc((ha + hb) / 2, 70, .8); gx.lineWidth = 2; gx.beginPath(); gx.arc(mid.x, mid.y, pr, 0, 6.2832); gx.stroke();
+    for (let j = 0; j < 3; j++) {                              // nada mengalir bolak-balik
+      for (const dir of [1, -1]) {
+        let t = (age * (dir > 0 ? .34 : .29) + j / 3 + (dir > 0 ? 0 : .17)) % 1; if (dir < 0) t = 1 - t;
+        const f = Math.sin(t * Math.PI), q = pt(t, wave(t, dir > 0 ? 0 : Math.PI * .9) + (dir > 0 ? -9 : 9) * f), h = hue(t);
+        const al = env * Math.min(1, f * 2.2), sz = 5.2 + f * 1.6;
+        gx.globalAlpha = al * (gLight ? .09 : .22); gx.fillStyle = hc(h, tone + 14); gx.beginPath(); gx.arc(q.x, q.y - sz, sz * 2.1, 0, 6.2832); gx.fill();
+        gx.globalAlpha = al; gx.fillStyle = hc(h, tone); gx.strokeStyle = hc(h, tone);
+        drawNote(gx, q.x - sz * .3, q.y + sz * 1.1, sz, (j + (dir > 0 ? 0 : 1)) % 2, Math.sin(age * 2.4 + j * 2 + dir) * .22);
+      }
+    }
+    const mid = pt(.5, wave(.5, 0) * .4), bob = Math.sin(age * 3.4) * 2.2;          // not besar mengambang di tengah
+    gx.globalAlpha = env * (gLight ? .09 : .22); gx.fillStyle = hc(hue(.5), tone + 14); gx.beginPath(); gx.arc(mid.x, mid.y - 8, 17, 0, 6.2832); gx.fill();
+    gx.globalAlpha = env; gx.fillStyle = hc(hue(.5), tone); gx.strokeStyle = hc(hue(.5), tone);
+    drawNote(gx, mid.x - 3, mid.y + 6 + bob, 8.5, 1, Math.sin(age * 1.8) * .12);
     gx.globalAlpha = 1;
-    if (age - d.lastB > .8) { d.lastB = age; burst(ka); burst(kb); }                // nada kecil keluar dari kedua avatar
+    if (age - d.lastB > .9) { d.lastB = age; burst(ka); burst(kb); }
   }
   function gLoop(now) {
     const dt = Math.max(0, Math.min(.05, (now - gPrev) / 1000)); gPrev = now;
