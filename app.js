@@ -510,7 +510,7 @@
      bergantian tik (tinggi) dan tok (rendah), tepat saat jarum detik melompat. Satu ketukan juga saat jam baru mendarat
      setelah lagu berhenti. Volumenya mengikuti knob (0 = senyap). AudioContext baru dibuat setelah interaksi pertama
      (aturan autoplay browser), jadi sebelum itu halaman tetap senyap. */
-  let tctx = null, tnoise = null, tflip = false, clockMode = false;
+  let tctx = null, tnoise = null, tbuf = null, tflip = false, clockMode = false;     // tbuf: suara dari file tick.mp3 (kalau ada); kalau tidak ada, pakai suara sintetis
   function unlockTick() {
     try {
       if (!tctx) {
@@ -520,6 +520,7 @@
         tnoise = tctx.createBuffer(1, Math.floor(tctx.sampleRate * 0.05), tctx.sampleRate);
         const d = tnoise.getChannelData(0);
         for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        fetch('tick.mp3').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject())).then((b) => tctx.decodeAudioData(b)).then((buf) => { tbuf = buf; }).catch(() => { /* tidak ada tick.mp3: pakai suara sintetis */ });
       }
       if (tctx.state === 'suspended') tctx.resume();
     } catch (e) { tctx = null; }
@@ -543,6 +544,13 @@
     if (!tctx || tctx.state !== 'running') return;
     const vol = Math.min(1, state.vol);
     if (vol <= 0) return;
+    if (tbuf) {                                                 // suara dari file: diputar tiap detik, dipotong maksimal 1 detik supaya tidak bertumpuk
+      const src = tctx.createBufferSource(), g = tctx.createGain(), t = tctx.currentTime + 0.005, end = Math.min(tbuf.duration, 1);
+      src.buffer = tbuf;
+      g.gain.setValueAtTime(vol * (soft ? 0.75 : 1), t); g.gain.setValueAtTime(vol * (soft ? 0.75 : 1), t + Math.max(0, end - 0.05)); g.gain.linearRampToValueAtTime(0.0001, t + end);
+      src.connect(g); g.connect(tctx.destination); src.start(t); src.stop(t + end);
+      return;
+    }
     tickSound(tctx, tctx.destination, tnoise, tctx.currentTime + 0.005, tflip, 0.3 * vol * (soft ? 0.75 : 1));
     tflip = !tflip;
   }
@@ -888,7 +896,7 @@
 
   // catetan: teks singkat di bawah avatar, tetap tampil (juga setelah refresh) sampai kamu menyimpan catetan baru
   const NOTE_MAX = 40;
-  const cleanNote = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, NOTE_MAX);
+  const cleanNote = (s) => Array.from(String(s == null ? '' : s).replace(/\s+/g, ' ').trim()).slice(0, NOTE_MAX).join('');
   const mine = { note: cleanNote(store.get('lobby.note', '')) };
   // AFK otomatis: tab / aplikasi disembunyikan (HP dikunci atau pindah aplikasi, lagu tetap jalan di background) -> catetan sementara "AFK"
   const AFK_TEXT = 'AFK', AFK_STALE_MS = 10 * 60 * 1000;     // browser memperlambat timer tab tersembunyi, jadi AFK diberi toleransi heartbeat lebih lama
@@ -1498,6 +1506,11 @@
   /* ---------- chat gelembung ala Roblox: muncul di atas kepala, beberapa detik kemudian hilang ---------- */
   // pesan ikut dititipkan di data kehadiran (chat + chatAt), jadi tidak butuh jalur / aturan Firebase baru
   const CHAT_MAX = 80;
+  const cut = (str, n) => Array.from(str).slice(0, n).join('');          // potong per karakter (bukan per kode UTF-16) supaya huruf Mandarin langka/emoji tidak rusak
+  function setLang(el, text) {                                           // tandai bahasa teks supaya browser memilih font Mandarin/Jepang/Korea yang benar
+    const l = /[\u3040-\u30ff]/.test(text) ? 'ja' : /[\uac00-\ud7af]/.test(text) ? 'ko' : /[\u3400-\u9fff\uf900-\ufaff\u{20000}-\u{2ffff}]/u.test(text) ? 'zh-Hans' : '';
+    if (l) el.lang = l; else el.removeAttribute('lang');
+  }
   let chatLastSend = 0;
   const chatBar = $('#chatbar'), chatIn = $('#chatIn');
   const BUBBLE_MAX = 3, BUBBLE_MS = 10000;                      // maks 3 gelembung per orang, tiap pesan hilang setelah 10 detik
@@ -1515,6 +1528,7 @@
       void b.offsetWidth; b.classList.add('show');
     }
     b.textContent = text;                                       // textContent: catetan orang lain tidak pernah dianggap HTML
+    setLang(b, text);
     s.root.classList.add('talk');
     clampStack(s.stack);
   }
@@ -1540,6 +1554,7 @@
     const b = document.createElement('div');
     b.className = 'bubble';
     b.textContent = text;                                     // textContent: pesan orang lain tidak pernah dianggap HTML
+    setLang(b, text);
     s.stack.append(b);                                        // pesan baru di bawah, yang lama naik ke atas
     void b.offsetWidth; b.classList.add('show');
     s.root.classList.add('talk');
@@ -1585,7 +1600,7 @@
   }
   function stopTyping() { sendTyping(false); }
   function chatFrom(id, raw) {
-    const text = String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX);
+    const text = cut(String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim(), CHAT_MAX);
     if (!text) return;
     typingFrom(id, '');
     const k = seatEls.findIndex((s) => s.id === String(id));
@@ -1594,7 +1609,7 @@
     if (p) toast(p.name + ': ' + text);
   }
   function sendChat(raw) {
-    const text = String(raw).replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX);
+    const text = cut(String(raw).replace(/\s+/g, ' ').trim(), CHAT_MAX);
     const t = Date.now();
     if (!text || t - chatLastSend < 800) return false;       // jeda antar pesan supaya tidak spam
     chatLastSend = t;

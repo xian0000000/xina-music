@@ -36,6 +36,7 @@ jobs:
           mkdir _site
           cp index.html app.js style.css lame.min.js config.js manifest.webmanifest sw.js _site/
           cp -r icons _site/icons
+          cp tick.mp3 _site/ 2>/dev/null || true
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

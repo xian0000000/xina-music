@@ -872,3 +872,8 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
   .sp-card { width: 100%; max-height: 82dvh; border-radius: 22px 22px 0 0; padding-bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateY(40px); }
 }
 @media (prefers-reduced-motion: reduce) { .sp-card, .sp-back { transition: none; } }
+
+/* huruf Mandarin/Jepang/Korea di gelembung & catetan: Poppins tidak punya glyph-nya, jadi sebut font sistem yang benar secara eksplisit */
+.bubble:lang(zh) { font-family: "Poppins", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", "WenQuanYi Micro Hei", system-ui, sans-serif; }
+.bubble:lang(ja) { font-family: "Poppins", "Hiragino Sans", "Noto Sans JP", "Noto Sans CJK JP", "Yu Gothic", "Meiryo", system-ui, sans-serif; }
+.bubble:lang(ko) { font-family: "Poppins", "Apple SD Gothic Neo", "Noto Sans KR", "Noto Sans CJK KR", "Malgun Gothic", system-ui, sans-serif; }
