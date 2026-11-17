@@ -510,7 +510,7 @@
      bergantian tik (tinggi) dan tok (rendah), tepat saat jarum detik melompat. Satu ketukan juga saat jam baru mendarat
      setelah lagu berhenti. Volumenya mengikuti knob (0 = senyap). AudioContext baru dibuat setelah interaksi pertama
      (aturan autoplay browser), jadi sebelum itu halaman tetap senyap. */
-  let tctx = null, tnoise = null, tbuf = null, tflip = false, clockMode = false;     // tbuf: suara dari file tick.mp3 (kalau ada); kalau tidak ada, pakai suara sintetis
+  let tctx = null, tnoise = null, tbuf = null, tflip = false, clockMode = false;     // tbuf: suara dari file tick.wav (kalau ada); kalau tidak ada, pakai suara sintetis
   function unlockTick() {
     try {
       if (!tctx) {
@@ -520,7 +520,7 @@
         tnoise = tctx.createBuffer(1, Math.floor(tctx.sampleRate * 0.05), tctx.sampleRate);
         const d = tnoise.getChannelData(0);
         for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-        fetch('tick.mp3').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject())).then((b) => tctx.decodeAudioData(b)).then((buf) => { tbuf = buf; }).catch(() => { /* tidak ada tick.mp3: pakai suara sintetis */ });
+        fetch('tick.wav').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject())).then((b) => tctx.decodeAudioData(b)).then((buf) => { tbuf = buf; }).catch(() => { /* tidak ada tick.wav: pakai suara sintetis */ });
       }
       if (tctx.state === 'suspended') tctx.resume();
     } catch (e) { tctx = null; }
