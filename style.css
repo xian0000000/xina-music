@@ -835,3 +835,40 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 #installBtn[hidden], #installGo[hidden] { display: none; }
 @media (max-width: 760px), (max-aspect-ratio: 4/5) { .acts { gap: 8px; } }
 @media all and (display-mode: standalone) { #installBtn { display: none; } }
+
+
+/* ---------- panel daftar lagu (ketuk piringan) ---------- */
+.songpanel { position: fixed; inset: 0; z-index: 80; display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; align-items: center; padding: 16px; box-sizing: border-box; }
+.songpanel[hidden] { display: none; }
+.sp-back { position: absolute; inset: 0; background: rgba(0,0,0,.45); opacity: 0; transition: opacity .2s; }
+.sp-card {
+  position: relative; width: min(440px, 100%); min-width: 0; max-height: min(620px, calc(100dvh - 32px)); display: flex; flex-direction: column; box-sizing: border-box;
+  padding: 14px 14px 16px; border-radius: 20px; background: var(--card); color: var(--ink); border: 1px solid var(--line);
+  box-shadow: 0 16px 50px rgba(0,0,0,.3); opacity: 0; transform: translateY(14px) scale(.97);
+  transition: opacity .2s, transform .3s cubic-bezier(.3,1.4,.5,1);
+}
+.songpanel.show .sp-back { opacity: 1; }
+.songpanel.show .sp-card { opacity: 1; transform: none; }
+.sp-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.sp-title b { display: block; font-size: 16px; font-weight: 600; }
+.sp-title small { display: block; margin-top: 2px; color: var(--mute); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.sp-x { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: var(--soft); color: var(--ink); cursor: pointer; }
+.sp-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.sp-row { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--soft); }
+.sp-row.cur { border-color: var(--ink); }
+.sp-play { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 2px 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.sp-num { flex: none; width: 22px; text-align: center; color: var(--mute); font-size: 12px; font-variant-numeric: tabular-nums; }
+.sp-row.cur .sp-num { color: var(--ink); }
+.sp-txt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
+.sp-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mute); font-size: 11px; }
+.sp-del { flex: none; padding: 7px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--mute); font-size: 12px; cursor: pointer; }
+.sp-del.sure { border-color: #d33; background: #d33; color: #fff; font-weight: 600; }
+.sp-empty { padding: 22px 8px; text-align: center; color: var(--mute); font-size: 13px; }
+.sp-empty[hidden] { display: none; }
+.songpanel .sm-act { margin-top: 12px; }
+@media (max-width: 560px) {
+  .songpanel { align-items: end; padding: 0; }
+  .sp-card { width: 100%; max-height: 82dvh; border-radius: 22px 22px 0 0; padding-bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateY(40px); }
+}
+@media (prefers-reduced-motion: reduce) { .sp-card, .sp-back { transition: none; } }

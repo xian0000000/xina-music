@@ -123,6 +123,7 @@
   const state = { tracks: [], index: -1, shuffle: false, loop: 'all', vol: 0.8 };
   // local.on = sedang offline (atau server belum tersambung): pemutar jalan sendiri dari lagu yang tersimpan di perangkat
   const local = { on: false };
+  const sp = { open: false };                                 // panel daftar lagu
   const shd = () => !!fb && !local.on;                        // true = kontrol memutar lagu bersama lobby
   const REST_ANGLE = 0;
   const currentTitle = () => (state.tracks[state.index] ? state.tracks[state.index].name : '');
@@ -197,6 +198,7 @@
 
   /* ---------- render ---------- */
   function renderQueue() {
+    if (sp.open) renderSongPanel();
     document.body.classList.toggle('empty', state.tracks.length === 0);
     el.seek.disabled = state.tracks.length === 0;
   }
@@ -221,6 +223,7 @@
   }
 
   function updateNow(dir) {
+    if (sp.open) renderSongPanel();
     const t = currentTitle();
     swapTitle(t || 'Belum ada lagu', dir || 1);
     document.title = t ? t + ' — Xina Music' : 'Xina Music';
@@ -298,9 +301,9 @@
   $('#btnPlay2').addEventListener('click', toggle);
   $('#btnPrev').addEventListener('click', prev);
   $('#btnNext').addEventListener('click', () => next(false));
-  el.platter.addEventListener('click', () => el.file.click());
+  el.platter.addEventListener('click', () => openSongPanel());
   el.platter.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.code === 'Space') { e.preventDefault(); e.stopPropagation(); el.file.click(); }
+    if (e.key === 'Enter' || e.code === 'Space') { e.preventDefault(); e.stopPropagation(); openSongPanel(); }
   });
   el.dispBtn.addEventListener('click', () => { if (!state.tracks.length) el.file.click(); });
   el.file.addEventListener('change', () => { addFiles(el.file.files); el.file.value = ''; });
@@ -1154,7 +1157,7 @@
       const list = [];
       snap.forEach((c) => {
         const v = c.val();
-        if (v && v.n) list.push({ id: c.key, name: String(v.name || 'Tanpa judul').slice(0, 80), dur: 0, url: null, type: v.type, by: String(v.by || ''), at: v.at || Date.now() });
+        if (v && v.n) list.push({ id: c.key, name: String(v.name || 'Tanpa judul').slice(0, 80), dur: 0, url: null, type: v.type, by: String(v.by || ''), size: +v.size || 0, at: v.at || Date.now() });
       });
       list.sort((a, b) => a.at - b.at);
       shared.list = list;
@@ -1613,6 +1616,76 @@
     const fit = () => chatBar.style.setProperty('--kb', Math.max(0, window.innerHeight - vv.height - vv.offsetTop) + 'px');
     vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
   }
+
+  /* ---------- panel daftar lagu: ketuk piringan -> lihat, putar, hapus, tambah lagu ---------- */
+  const songPanel = $('#songPanel'), spList = $('#spList'), spEmpty = $('#spEmpty'), spInfo = $('#spInfo'), spHint = $('#spHint');
+  let spSure = null, spSureT = 0;
+  const mb = (b) => (b / 1048576).toFixed(1) + ' MB';
+  function renderSongPanel() {
+    const L = state.tracks, canDel = shd(), cur = state.index;
+    const total = L.reduce((a, t) => a + (t.size || 0), 0);
+    spInfo.textContent = L.length + (canDel ? ' / ' + MAX_SONGS : '') + ' lagu' + (total ? ' · ' + mb(total) : '');
+    spEmpty.hidden = L.length > 0;
+    spHint.textContent = canDel
+      ? 'Lagu dibagikan ke semua orang di lobby. Kalau lebih dari ' + MAX_SONGS + ' lagu, yang paling lama dihapus otomatis. Maks 4 MB per lagu setelah dikompres.'
+      : 'Sedang offline atau mode lokal: hapus lagu hanya bisa saat tersambung ke lobby.';
+    spList.textContent = '';
+    L.forEach((t, i) => {
+      const li = document.createElement('li'); li.className = 'sp-row' + (i === cur ? ' cur' : '');
+      const play = document.createElement('button'); play.type = 'button'; play.className = 'sp-play';
+      const num = document.createElement('span'); num.className = 'sp-num'; num.textContent = i === cur ? '▶' : String(i + 1);
+      const txt = document.createElement('span'); txt.className = 'sp-txt';
+      const nm = document.createElement('span'); nm.className = 'sp-name'; nm.textContent = t.name;
+      const meta = document.createElement('span'); meta.className = 'sp-meta';
+      meta.textContent = [t.by ? 'oleh ' + t.by : '', t.size ? mb(t.size) : ''].filter(Boolean).join(' · ');
+      txt.append(nm); if (meta.textContent) txt.append(meta);
+      play.append(num, txt);
+      play.addEventListener('click', () => playFromPanel(i));
+      li.append(play);
+      if (canDel) {
+        const del = document.createElement('button'); del.type = 'button'; del.className = 'sp-del' + (spSure === t.id ? ' sure' : '');
+        del.textContent = spSure === t.id ? 'Yakin?' : 'Hapus'; del.setAttribute('aria-label', 'Hapus ' + t.name);
+        del.addEventListener('click', () => {
+          if (spSure !== t.id) { spSure = t.id; clearTimeout(spSureT); spSureT = setTimeout(() => { spSure = null; if (sp.open) renderSongPanel(); }, 3000); renderSongPanel(); return; }
+          spSure = null; clearTimeout(spSureT); deleteSong(t);
+        });
+        li.append(del);
+      }
+      spList.append(li);
+    });
+  }
+  function playFromPanel(i) {
+    const t = state.tracks[i]; if (!t) return;
+    if (shd()) pbWrite({ sid: t.id, playing: true, pos: 0 });
+    else loadTrack(i, true, i >= state.index ? 1 : -1);
+    closeSongPanel();
+  }
+  function deleteSong(t) {
+    if (!shd()) return;
+    const pb = shared.pb, rest = state.tracks.filter((x) => x.id !== t.id);
+    if (pb && pb.sid === t.id) pbWrite(rest.length ? { sid: (rest[state.index] || rest[0]).id, playing: !!pb.playing, pos: 0 } : { sid: null, playing: false, pos: 0 });   // pindah dulu supaya semua orang tidak tertahan di lagu yang dihapus
+    fb.db.remove(fb.db.ref(fb.rdb, 'lobby/songs/' + t.id)).catch(() => toast('Gagal menghapus'));
+    fb.db.remove(fb.db.ref(fb.rdb, 'lobby/chunks/' + t.id)).catch(() => {});
+    toast(t.name + ' dihapus');
+  }
+  function openSongPanel() {
+    if (sp.open) return;
+    sp.open = true; spSure = null;
+    if (typeof pops !== 'undefined') pops.forEach((o) => o.close());
+    renderSongPanel();
+    songPanel.hidden = false; void songPanel.offsetWidth; songPanel.classList.add('show');
+    $('#spClose').focus({ preventScroll: true });
+  }
+  function closeSongPanel() {
+    if (!sp.open) return;
+    sp.open = false; clearTimeout(spSureT); songPanel.classList.remove('show');
+    setTimeout(() => { if (!sp.open) songPanel.hidden = true; }, 220);
+    el.platter.focus({ preventScroll: true });
+  }
+  $('#spClose').addEventListener('click', closeSongPanel);
+  $('#spBack').addEventListener('click', closeSongPanel);
+  $('#spAdd').addEventListener('click', () => el.file.click());
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sp.open) closeSongPanel(); });
 
   /* ---------- popover kecil di bawah tombol header (ganti nama & catetan): tanpa prompt/alert bawaan browser ---------- */
   const pops = [];
