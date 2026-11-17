@@ -77,13 +77,7 @@
     return Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
   };
   const cleanName = (n) => n.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim() || 'Tanpa judul';
-  let toastTimer;
-  const toast = (msg) => {
-    el.toast.textContent = msg;
-    el.toast.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.toast.classList.remove('show'), 2400);
-  };
+  const toast = () => {};                                    // notifikasi pop-up dimatikan (menutupi layar)
 
   // angka menghitung naik/turun dengan ease-out (seperti count-up di web cuaca)
   function tween(node, to, dec, suf, dur) {
@@ -1452,9 +1446,38 @@
     vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
   }
 
-  $('#renameBtn').addEventListener('click', () => rename());
+  /* ---------- popover kecil di bawah tombol header (ganti nama & catetan): tanpa prompt/alert bawaan browser ---------- */
+  const pops = [];
+  function makePopover(btn, menu, input, onOpen) {
+    const p = { btn, menu, input };
+    p.open = () => {
+      pops.forEach((o) => { if (o !== p) o.close(); });
+      onOpen();
+      menu.hidden = false;
+      input.focus({ preventScroll: true });                       // fokus langsung di dalam ketukan, supaya keyboard HP ikut terbuka
+      const r = btn.getBoundingClientRect(), vw = document.documentElement.clientWidth, w = menu.offsetWidth;
+      const left = Math.round(Math.max(12, Math.min(vw - w - 12, r.right - w)));
+      menu.style.top = Math.round(r.bottom + 8) + 'px';
+      menu.style.left = left + 'px';
+      menu.style.transformOrigin = Math.max(12, Math.min(w - 12, r.left + r.width / 2 - left)) + 'px 0';
+      void menu.offsetWidth; menu.classList.add('show');
+      btn.setAttribute('aria-expanded', 'true');
+      try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) { /* abaikan */ }
+    };
+    p.close = () => {
+      if (menu.hidden) return;
+      menu.classList.remove('show'); menu.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+      input.blur();
+    };
+    btn.addEventListener('click', () => { if (menu.hidden) p.open(); else p.close(); });
+    pops.push(p);
+    return p;
+  }
+  document.addEventListener('pointerdown', (e) => { for (const p of pops) if (!p.menu.hidden && !e.target.closest('#' + p.menu.id + ', #' + p.btn.id)) p.close(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') for (const p of pops) if (!p.menu.hidden) { p.close(); p.btn.focus(); } });
 
-  /* ---------- catetan: teks yang menempel di bawah avatar sampai kamu menyimpan yang baru ---------- */
+  // catetan: teks yang menempel di atas avatar sampai kamu menyimpan yang baru
   const noteBtn = $('#noteBtn'), noteMenu = $('#noteMenu'), noteIn = $('#noteIn'), noteCount = $('#noteCount');
   const countNote = () => { noteCount.textContent = noteIn.value.length + '/' + NOTE_MAX; };
   function refreshNoteBtn() {
@@ -1466,39 +1489,22 @@
     store.set('lobby.note', mine.note);
     refreshNoteBtn(); renderSeats(); announce(); pushPresence(true);
   }
-  function openNote() {
-    noteIn.value = mine.note; countNote();
-    const r = noteBtn.getBoundingClientRect(), vw = document.documentElement.clientWidth;
-    noteMenu.hidden = false;
-    const w = noteMenu.offsetWidth;                              // sisi kanan sejajar tombol, tapi selalu di dalam layar
-    const left = Math.round(Math.max(12, Math.min(vw - w - 12, r.right - w)));
-    noteMenu.style.top = Math.round(r.bottom + 8) + 'px';
-    noteMenu.style.left = left + 'px';
-    noteMenu.style.transformOrigin = Math.max(12, Math.min(w - 12, r.left + r.width / 2 - left)) + 'px 0';
-    void noteMenu.offsetWidth; noteMenu.classList.add('show');
-    noteBtn.setAttribute('aria-expanded', 'true');
-    setTimeout(() => { if (!noteMenu.hidden) { noteIn.focus(); noteIn.select(); } }, 60);
-  }
-  function closeNote() {
-    if (noteMenu.hidden) return;
-    noteMenu.classList.remove('show'); noteMenu.hidden = true;
-    noteBtn.setAttribute('aria-expanded', 'false');
-  }
-  noteBtn.addEventListener('click', () => { if (noteMenu.hidden) openNote(); else closeNote(); });
+  const notePop = makePopover(noteBtn, noteMenu, noteIn, () => { noteIn.value = mine.note; countNote(); });
   noteIn.addEventListener('input', countNote);
-  noteMenu.addEventListener('submit', (e) => { e.preventDefault(); saveNote(noteIn.value); closeNote(); toast(mine.note ? 'Catetan disimpan' : 'Catetan dihapus'); });
-  $('#noteClear').addEventListener('click', () => { saveNote(''); closeNote(); toast('Catetan dihapus'); });
-  document.addEventListener('pointerdown', (e) => { if (!noteMenu.hidden && !e.target.closest('#noteMenu, #noteBtn')) closeNote(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !noteMenu.hidden) { closeNote(); noteBtn.focus(); } });
+  noteMenu.addEventListener('submit', (e) => { e.preventDefault(); saveNote(noteIn.value); notePop.close(); });
+  $('#noteClear').addEventListener('click', () => { saveNote(''); notePop.close(); });
   refreshNoteBtn();
 
-  function rename() {
-    const n = window.prompt('Nama kamu di lobby:', me.name);
-    if (n === null) return;
-    me.name = n.trim().slice(0, 24) || me.name;
+  // ganti nama
+  const nameIn = $('#nameIn'), nameMenu = $('#nameMenu');
+  const namePop = makePopover($('#renameBtn'), nameMenu, nameIn, () => { nameIn.value = me.name; });
+  nameMenu.addEventListener('submit', (e) => {
+    e.preventDefault();
+    me.name = nameIn.value.replace(/\s+/g, ' ').trim().slice(0, 24) || me.name;
     store.set('lobby.name', me.name);
     announce(); pushPresence(true); renderSeats();
-  }
+    namePop.close();
+  });
 
   // tiap orang kebagian satu alat musik (dipilih dari hash id, jadi sama di semua perangkat): drum set, mic, tamborin, trumpet, ukulele, pianika, harmonika.
   // lingkaran warnanya ada di belakang alat; saat lagu diputar alatnya "dimainkan" lewat animasi CSS

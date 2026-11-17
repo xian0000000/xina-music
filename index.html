@@ -141,10 +141,16 @@
 </form>
 
 <!-- catetan: teks singkat di bawah avatarmu, tetap tampil sampai kamu menyimpan yang baru -->
+<form class="notemenu" id="nameMenu" role="dialog" aria-label="Ganti nama" autocomplete="off" hidden>
+  <label class="sm-l" for="nameIn">Nama kamu</label>
+  <input id="nameIn" type="text" maxlength="24" placeholder="Nama" enterkeyhint="done">
+  <div class="sm-act"><button type="submit" class="sm-save">Simpan</button></div>
+</form>
+
 <form class="notemenu" id="noteMenu" role="dialog" aria-label="Catetan" autocomplete="off" hidden>
   <label class="sm-l" for="noteIn">Catetan <small id="noteCount">0/40</small></label>
   <input id="noteIn" type="text" maxlength="40" placeholder="mis. lagi ngerjain tugas" enterkeyhint="done">
-  <div class="sm-hint">Tampil di bawah avatarmu untuk semua orang dan tidak hilang sampai kamu menyimpan catetan baru.</div>
+  <div class="sm-hint">Tampil di atas avatarmu untuk semua orang dan tidak hilang sampai kamu menyimpan catetan baru.</div>
   <div class="sm-act">
     <button type="button" class="sm-clear" id="noteClear">Hapus</button>
     <button type="submit" class="sm-save">Simpan</button>
