@@ -89,13 +89,13 @@ h1 small { display: block; color: var(--mute); font-size: 12px; font-weight: 400
 .acts { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 .room { color: var(--mute); font-size: 12px; }
 .room b { color: var(--ink); font-weight: 600; }
-#theme, #chatBtn {
+#theme, #chatBtn, #noteBtn, #renameBtn {
   border: 1px solid var(--line); background: var(--soft); border-radius: 999px;
   padding: 6px 14px; font-size: 13px;
   transition: transform .25s, background .3s, border-color .3s;
 }
-#theme:hover, #chatBtn:hover { transform: scale(1.08) rotate(-3deg); }
-#theme:active, #chatBtn:active { transform: scale(.94); }
+#theme:hover, #chatBtn:hover, #noteBtn:hover, #renameBtn:hover { transform: scale(1.08) rotate(-3deg); }
+#theme:active, #chatBtn:active, #noteBtn:active, #renameBtn:active { transform: scale(.94); }
 
 /* ---------- panggung ---------- */
 .stage {
@@ -537,7 +537,7 @@ body.dragging .drop { display: grid; }
   .room { display: none; }
   .l-seats, .l-spot { --sw: 30px; --rx: 38cqw; --ry: 42cqh; }   /* HP potret: lingkaran tidak muat, pakai oval tinggi */
   .avatar { font-size: 12px; }
-  .seat .name { display: none; }
+  .seat .name { max-width: 64px; font-size: 9px; }
   .turntable { --strip: 84px; --w: min(46cqw, calc(52cqh - var(--strip))); scale: .66; }   /* dikecilkan supaya mekanik jam di belakangnya kelihatan */
   .strip { padding: 0 3% 6px; }
   .now-title { font-size: 12px; }
@@ -802,3 +802,31 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
   from { transform: translateX(calc(var(--tm, .8) * -4px)) rotate(calc(var(--tm, .8) * -2deg)); }
   to   { transform: translateX(calc(var(--tm, .8) * 4px)) rotate(calc(var(--tm, .8) * 2deg)); }
 }
+
+/* ---------- catetan ---------- */
+#noteBtn, #renameBtn { display: grid; place-items: center; padding: 7px 10px; color: var(--ink); cursor: pointer; }
+#noteBtn.has { border-color: var(--ink); }
+.notemenu {
+  position: fixed; z-index: 70; top: 52px; left: 12px;
+  width: min(300px, calc(100vw - 24px)); box-sizing: border-box; padding: 12px 14px 14px; margin: 0;
+  border-radius: 16px; background: var(--card); color: var(--ink); border: 1px solid var(--line);
+  box-shadow: 0 10px 34px rgba(0,0,0,.22);
+  opacity: 0; transform: translateY(-6px) scale(.96);
+  transition: opacity .2s, transform .3s cubic-bezier(.3,1.5,.5,1);
+}
+.notemenu[hidden] { display: none; }
+.notemenu.show { opacity: 1; transform: none; }
+.sm-l { display: flex; justify-content: space-between; margin: 0 0 6px; color: var(--mute); font-size: 11px; font-weight: 500; }
+.sm-l small { font-size: 11px; font-variant-numeric: tabular-nums; }
+#noteIn { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); color: var(--ink); font: inherit; font-size: 16px; outline: none; }
+#noteIn:focus { border-color: var(--ink); }
+.sm-hint { margin-top: 10px; color: var(--mute); font-size: 10.5px; line-height: 1.4; }
+.sm-act { display: flex; gap: 8px; margin-top: 12px; }
+.sm-act button { flex: 1; padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; background: var(--soft); color: var(--ink); }
+.sm-act .sm-save { flex: 2; border-color: var(--ink); background: var(--ink); color: var(--card); font-weight: 600; }
+
+/* catetan = gelembung tetap di dasar tumpukan chat (order: 1 -> paling dekat avatar), chat biasa menumpuk di atasnya */
+.bubble.unote { order: 1; font-weight: 400; }
+.bubble.unote::after { content: ""; position: absolute; left: calc(50% - var(--sx, 0px)); bottom: -6px; width: 9px; height: 9px; translate: -50% 0; rotate: 45deg;
+  background: var(--card); border-right: 2px solid hsl(var(--h, 200) 60% 58%); border-bottom: 2px solid hsl(var(--h, 200) 60% 58%); }
+.bubbles:has(.bubble.unote) .bubble:not(.unote)::after { display: none; }

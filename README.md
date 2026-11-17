@@ -21,6 +21,8 @@
 - 👥 **Maksimal 8 orang.** Kalau penuh, pendengar berikutnya menunggu dan masuk otomatis saat ada kursi kosong.
 - 🥁 **Alat musik ikut lagu.** Drum dipukul mengikuti bass dan snare, simbal bergoyang di hi-hat, tamborin bergetar sesuai treble. Mic, trumpet, ukulele, pianika, dan harmonika bergerak mengikuti vokal dan melodi.
 - 🕰️ **Jam berdetak.** Saat tidak ada lagu, jam besar kembali ke waktu asli dan berbunyi tik-tok tiap detik. Volumenya mengikuti knob.
+- 📝 **Catetan.** Tombol catetan di pojok atas untuk menulis teks singkat (maks 40 karakter). Tampil sebagai gelembung tetap di atas avatarmu, di bawah gelembung chat biasa, dan tidak hilang sampai kamu menyimpan catetan baru.
+- ✏️ **Ganti nama** lewat ikon di samping tombol catetan.
 - 💬 **Chat gelembung.** Pesan muncul di atas avatar, bertumpuk maksimal 3, dan hilang sendiri setelah 10 detik.
 - 🗜️ **Lagu otomatis dikompres** saat diunggah, jadi lebih kecil dan hemat kuota.
 - 💾 **Tersimpan di perangkat.** Lagu yang sudah didengar tidak diunduh ulang.

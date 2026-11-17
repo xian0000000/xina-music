@@ -880,7 +880,11 @@
   try { bc = new BroadcastChannel('lobby-dengar-v1'); } catch (e) { bc = null; }
   let fb = null;                                            // { update, meRef } setelah Firebase tersambung
 
-  const presenceData = () => ({ name: me.name, hue: me.hue, playing: !audio.paused && state.tracks.length > 0, title: currentTitle().slice(0, 80) });
+  // catetan: teks singkat di bawah avatar, tetap tampil (juga setelah refresh) sampai kamu menyimpan catetan baru
+  const NOTE_MAX = 40;
+  const cleanNote = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, NOTE_MAX);
+  const mine = { note: cleanNote(store.get('lobby.note', '')) };
+  const presenceData = () => ({ name: me.name, hue: me.hue, playing: !audio.paused && state.tracks.length > 0, title: currentTitle().slice(0, 80), note: mine.note || null });
   let pushT = null;
   function pushPresence(now) {
     if (!fb) return;
@@ -893,7 +897,7 @@
     if (fb) { pushPresence(false); return; }
     if (!bc) return;
     try {
-      bc.postMessage({ type: type || 'hb', id: me.id, name: me.name, hue: me.hue, playing: !audio.paused, title: currentTitle() });
+      bc.postMessage({ type: type || 'hb', id: me.id, name: me.name, hue: me.hue, playing: !audio.paused, title: currentTitle(), note: mine.note });
     } catch (e) { /* abaikan */ }
   }
 
@@ -911,7 +915,7 @@
       const isNew = !peers.has(m.id);
       peers.set(m.id, {
         id: String(m.id), name: String(m.name || '?').slice(0, 24), hue: Number(m.hue) || 0,
-        playing: !!m.playing, title: String(m.title || '').slice(0, 80), seen: Date.now()
+        playing: !!m.playing, title: String(m.title || '').slice(0, 80), note: cleanNote(m.note), seen: Date.now()
       });
       if (m.type === 'hello' || isNew) announce();
       renderSeats();
@@ -1306,7 +1310,7 @@
           }
           peers.set(id, {
             id, name: String(v.name || '?').slice(0, 24), hue: Number(v.hue) || 0,
-            playing: !!v.playing, title: String(v.title || '').slice(0, 80), seen: Date.now()
+            playing: !!v.playing, title: String(v.title || '').slice(0, 80), note: cleanNote(v.note), seen: Date.now()
           });
         });
         for (const id of [...peers.keys()]) if (!seen.has(id)) { peers.delete(id); lastTap.delete(id); lastChat.delete(id); lastTyp.delete(id); lastGift.delete(id); lastDuet.delete(id); }
@@ -1332,6 +1336,23 @@
   let chatLastSend = 0;
   const chatBar = $('#chatbar'), chatIn = $('#chatIn');
   const BUBBLE_MAX = 3, BUBBLE_MS = 10000;                      // maks 3 gelembung per orang, tiap pesan hilang setelah 10 detik
+  function ensureStack(s) {
+    if (!s.stack) { s.stack = document.createElement('div'); s.stack.className = 'bubbles'; s.root.append(s.stack); }
+    return s.stack;
+  }
+  // catetan = gelembung tetap di paling bawah tumpukan (paling dekat avatar); chat biasa menumpuk di atasnya
+  function setNoteBubble(s, text) {
+    let b = s.noteEl && s.noteEl.isConnected ? s.noteEl : null;
+    if (!text) { if (b) { b.remove(); s.noteEl = null; if (s.stack && !s.stack.children.length) s.root.classList.remove('talk'); } return; }
+    if (!b) {
+      b = document.createElement('div'); b.className = 'bubble unote';
+      ensureStack(s).append(b); s.noteEl = b;
+      void b.offsetWidth; b.classList.add('show');
+    }
+    b.textContent = text;                                       // textContent: catetan orang lain tidak pernah dianggap HTML
+    s.root.classList.add('talk');
+    clampStack(s.stack);
+  }
   function dropBubble(s, b) {
     if (!b.isConnected || b.dataset.gone) return;
     b.dataset.gone = '1'; clearTimeout(b._t);
@@ -1349,7 +1370,7 @@
     const s = seatEls[k];
     if (!s || !s.id) return false;
     if (!s.stack) { s.stack = document.createElement('div'); s.stack.className = 'bubbles'; s.root.append(s.stack); }
-    const live = [...s.stack.children].filter((x) => !x.dataset.gone);
+    const live = [...s.stack.children].filter((x) => !x.dataset.gone && !x.classList.contains('unote'));
     while (live.length >= BUBBLE_MAX) dropBubble(s, live.shift());    // yang terlama (paling atas) tergeser keluar
     const b = document.createElement('div');
     b.className = 'bubble';
@@ -1430,6 +1451,46 @@
     const fit = () => chatBar.style.setProperty('--kb', Math.max(0, window.innerHeight - vv.height - vv.offsetTop) + 'px');
     vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
   }
+
+  $('#renameBtn').addEventListener('click', () => rename());
+
+  /* ---------- catetan: teks yang menempel di bawah avatar sampai kamu menyimpan yang baru ---------- */
+  const noteBtn = $('#noteBtn'), noteMenu = $('#noteMenu'), noteIn = $('#noteIn'), noteCount = $('#noteCount');
+  const countNote = () => { noteCount.textContent = noteIn.value.length + '/' + NOTE_MAX; };
+  function refreshNoteBtn() {
+    noteBtn.classList.toggle('has', !!mine.note);
+    noteBtn.title = mine.note ? 'Catetanmu: ' + mine.note : 'Tulis catetan (tetap tampil sampai kamu ganti)';
+  }
+  function saveNote(text) {
+    mine.note = cleanNote(text);
+    store.set('lobby.note', mine.note);
+    refreshNoteBtn(); renderSeats(); announce(); pushPresence(true);
+  }
+  function openNote() {
+    noteIn.value = mine.note; countNote();
+    const r = noteBtn.getBoundingClientRect(), vw = document.documentElement.clientWidth;
+    noteMenu.hidden = false;
+    const w = noteMenu.offsetWidth;                              // sisi kanan sejajar tombol, tapi selalu di dalam layar
+    const left = Math.round(Math.max(12, Math.min(vw - w - 12, r.right - w)));
+    noteMenu.style.top = Math.round(r.bottom + 8) + 'px';
+    noteMenu.style.left = left + 'px';
+    noteMenu.style.transformOrigin = Math.max(12, Math.min(w - 12, r.left + r.width / 2 - left)) + 'px 0';
+    void noteMenu.offsetWidth; noteMenu.classList.add('show');
+    noteBtn.setAttribute('aria-expanded', 'true');
+    setTimeout(() => { if (!noteMenu.hidden) { noteIn.focus(); noteIn.select(); } }, 60);
+  }
+  function closeNote() {
+    if (noteMenu.hidden) return;
+    noteMenu.classList.remove('show'); noteMenu.hidden = true;
+    noteBtn.setAttribute('aria-expanded', 'false');
+  }
+  noteBtn.addEventListener('click', () => { if (noteMenu.hidden) openNote(); else closeNote(); });
+  noteIn.addEventListener('input', countNote);
+  noteMenu.addEventListener('submit', (e) => { e.preventDefault(); saveNote(noteIn.value); closeNote(); toast(mine.note ? 'Catetan disimpan' : 'Catetan dihapus'); });
+  $('#noteClear').addEventListener('click', () => { saveNote(''); closeNote(); toast('Catetan dihapus'); });
+  document.addEventListener('pointerdown', (e) => { if (!noteMenu.hidden && !e.target.closest('#noteMenu, #noteBtn')) closeNote(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !noteMenu.hidden) { closeNote(); noteBtn.focus(); } });
+  refreshNoteBtn();
 
   function rename() {
     const n = window.prompt('Nama kamu di lobby:', me.name);
@@ -1540,9 +1601,8 @@
       root.style.setProperty('--c', Math.cos(a).toFixed(4));
       root.style.setProperty('--s', Math.sin(a).toFixed(4));
       root.style.setProperty('--i', k);
-      const av = document.createElement(k === 0 ? 'button' : 'div');
+      const av = document.createElement('div');
       av.className = 'avatar';
-      if (k === 0) { av.type = 'button'; av.title = 'Ganti nama'; av.addEventListener('click', rename); }
       const ins = document.createElement('span'); ins.className = 'ins';                 // lingkaran warna + alat musik
       av.append(ins);
       const eq = document.createElement('div');
@@ -1564,7 +1624,7 @@
   let seatsReady = false, shownCount = 0;
   function renderSeats() {
     const others = [...peers.values()].sort((a, b) => (a.id < b.id ? -1 : 1));
-    const list = [{ id: me.id, name: me.name, hue: me.hue, self: true, playing: !audio.paused && state.tracks.length > 0, title: currentTitle() }, ...others].slice(0, SEATS);
+    const list = [{ id: me.id, name: me.name, hue: me.hue, self: true, playing: !audio.paused && state.tracks.length > 0, title: currentTitle(), note: mine.note }, ...others].slice(0, SEATS);
 
     const n = 1 + peers.size;
     if (n !== shownCount) {
@@ -1574,7 +1634,7 @@
 
     for (let k = 0; k < SEATS; k++) {
       const p = list[k], s = seatEls[k];
-      const sig = p ? [p.id, p.name, p.hue, p.playing].join('|') : '';
+      const sig = p ? [p.id, p.name, p.hue, p.playing, p.note || ''].join('|') : '';
       if (s.sig === sig) continue;
       const joined = !!p && s.id !== p.id;
       if (s.typ && s.id !== (p ? p.id : null)) { clearTimeout(s.typ._t); dropBubble(s, s.typ); s.typ = null; }
@@ -1587,10 +1647,12 @@
         const svg = instrumentFor(p.id);
         if (s.ins !== svg) { s.ins = svg; s.av.firstChild.innerHTML = svg; }
         s.nm.textContent = p.self ? p.name + ' (kamu)' : p.name;
-        if (!p.self) s.av.title = p.name + (p.title ? ' — ' + (p.playing ? 'memutar: ' : 'siap: ') + p.title : '');
+        setNoteBubble(s, p.note);
+        if (!p.self) s.av.title = p.name + (p.note ? ' — "' + p.note + '"' : '') + (p.title ? ' — ' + (p.playing ? 'memutar: ' : 'siap: ') + p.title : '');
       } else {
         s.ins = null; s.av.firstChild.innerHTML = '';
         s.nm.textContent = '';
+        setNoteBubble(s, '');
         s.av.removeAttribute('title');
       }
       if (joined && seatsReady && !rm() && s.av.animate) {
@@ -1623,7 +1685,7 @@
     if (!s || !s.id) return;
     const p = peers.get(s.id);
     gmId = s.id; gmOpenedAt = performance.now();
-    gmT.textContent = 'Hadiah untuk ' + (p ? p.name : 'teman');
+    gmT.textContent = 'Hadiah untuk ' + (p ? p.name : 'teman') + (p && p.note ? ' — ' + p.note : '');
     gm.hidden = false;
     const r = s.av.getBoundingClientRect(), w = gm.offsetWidth, h = gm.offsetHeight, vw = document.documentElement.clientWidth;
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2, gap = Math.max(34, r.height * .85);
