@@ -89,13 +89,14 @@ h1 small { display: block; color: var(--mute); font-size: 12px; font-weight: 400
 .acts { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 .room { color: var(--mute); font-size: 12px; }
 .room b { color: var(--ink); font-weight: 600; }
-#theme, #chatBtn, #noteBtn, #renameBtn {
+.is-offline .room::after { content: " · offline"; }
+#theme, #chatBtn, #noteBtn, #renameBtn, #installBtn {
   border: 1px solid var(--line); background: var(--soft); border-radius: 999px;
   padding: 6px 14px; font-size: 13px;
   transition: transform .25s, background .3s, border-color .3s;
 }
-#theme:hover, #chatBtn:hover, #noteBtn:hover, #renameBtn:hover { transform: scale(1.08) rotate(-3deg); }
-#theme:active, #chatBtn:active, #noteBtn:active, #renameBtn:active { transform: scale(.94); }
+#theme:hover, #chatBtn:hover, #noteBtn:hover, #renameBtn:hover, #installBtn:hover { transform: scale(1.08) rotate(-3deg); }
+#theme:active, #chatBtn:active, #noteBtn:active, #renameBtn:active, #installBtn:active { transform: scale(.94); }
 
 /* ---------- panggung ---------- */
 .stage {
@@ -804,7 +805,7 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 }
 
 /* ---------- catetan ---------- */
-#noteBtn, #renameBtn { display: grid; place-items: center; padding: 7px 10px; color: var(--ink); cursor: pointer; }
+#noteBtn, #renameBtn, #installBtn { display: grid; place-items: center; padding: 7px 10px; color: var(--ink); cursor: pointer; }
 #noteBtn.has { border-color: var(--ink); }
 .notemenu {
   position: fixed; z-index: 70; top: 52px; left: 12px;
@@ -830,3 +831,7 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 .bubble.unote::after { content: ""; position: absolute; left: calc(50% - var(--sx, 0px)); bottom: -6px; width: 9px; height: 9px; translate: -50% 0; rotate: 45deg;
   background: var(--card); border-right: 2px solid hsl(var(--h, 200) 60% 58%); border-bottom: 2px solid hsl(var(--h, 200) 60% 58%); }
 .bubbles:has(.bubble.unote) .bubble:not(.unote)::after { display: none; }
+
+#installBtn[hidden], #installGo[hidden] { display: none; }
+@media (max-width: 760px), (max-aspect-ratio: 4/5) { .acts { gap: 8px; } }
+@media all and (display-mode: standalone) { #installBtn { display: none; } }

@@ -3,13 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Lobby Dengar</title>
+  <title>Xina Music</title>
   <script>try{var t=localStorage.getItem('lobby.theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
   <meta name="theme-color" content="#ededeb" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#050505" media="(prefers-color-scheme: dark)">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Xina Music">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="empty">
@@ -21,6 +29,7 @@
   <header class="top reveal" style="--d:0s">
     <div class="acts">
       <div class="room" title="Semua orang yang membuka halaman ini muncul di lobby secara realtime"><b id="count">1</b> di dalam lobby</div>
+      <button id="installBtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Install aplikasi" title="Install aplikasi" hidden><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 11l5 5 5-5M4 20h16"/></svg></button>
       <button id="renameBtn" type="button" aria-label="Ganti nama" title="Ganti nama"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.6"/><path d="M2.5 20c.4-3.6 3.1-5.6 6.5-5.6 1 0 1.9.2 2.7.5M15 21l.7-3.2 5.4-5.4a1.7 1.7 0 0 1 2.4 2.4l-5.4 5.4z"/></svg></button>
       <button id="noteBtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Catetan" title="Tulis catetan (tetap tampil sampai kamu ganti)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v12l-5 5H4z"/><path d="M15 21v-5h5M8 9h8M8 13h4"/></svg></button>
       <button id="chatBtn" type="button" aria-label="Chat (tekan Enter)" title="Chat (Enter)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.5-4.6A8 8 0 1 1 21 12z"/></svg></button>
@@ -141,6 +150,12 @@
 </form>
 
 <!-- catetan: teks singkat di bawah avatarmu, tetap tampil sampai kamu menyimpan yang baru -->
+<div class="notemenu" id="installMenu" role="dialog" aria-label="Install aplikasi" hidden>
+  <div class="sm-l" style="margin-bottom:8px">Install Xina Music</div>
+  <div class="sm-hint" id="installHelp" style="margin:0 0 12px"></div>
+  <div class="sm-act"><button type="button" class="sm-save" id="installGo">Install</button></div>
+</div>
+
 <form class="notemenu" id="nameMenu" role="dialog" aria-label="Ganti nama" autocomplete="off" hidden>
   <label class="sm-l" for="nameIn">Nama kamu</label>
   <input id="nameIn" type="text" maxlength="24" placeholder="Nama" enterkeyhint="done">

@@ -121,13 +121,16 @@
 
   /* ---------- state pemutar ---------- */
   const state = { tracks: [], index: -1, shuffle: false, loop: 'all', vol: 0.8 };
+  // local.on = sedang offline (atau server belum tersambung): pemutar jalan sendiri dari lagu yang tersimpan di perangkat
+  const local = { on: false };
+  const shd = () => !!fb && !local.on;                        // true = kontrol memutar lagu bersama lobby
   const REST_ANGLE = 0;
   const currentTitle = () => (state.tracks[state.index] ? state.tracks[state.index].name : '');
 
   function addFiles(list) {
     const files = [...list].filter((f) => f.type.startsWith('audio/') || /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|webm)$/i.test(f.name));
     if (!files.length) { toast('Tidak ada file audio yang dipilih'); return; }
-    if (fb) { uploadShared(files); return; }          // mode lobby: lagu dibagikan ke semua orang
+    if (shd()) { uploadShared(files); return; }          // mode lobby: lagu dibagikan ke semua orang
     const wasEmpty = state.tracks.length === 0;
     for (const f of files) {
       const t = { id: uid(), name: cleanName(f.name), url: URL.createObjectURL(f), dur: 0 };
@@ -147,6 +150,8 @@
     state.index = i;
     audio.src = state.tracks[i].url;
     audio.load();
+    shared.loadedSid = state.tracks[i].fromLobby ? state.tracks[i].id : null;
+    if (shared.loadedSid) store.set('lobby.last', shared.loadedSid);
     updateNow(dir);
     renderQueue();
     updateMediaSession();
@@ -156,7 +161,7 @@
 
   function next(auto) {
     clockRewind();
-    if (fb) { sharedNext(auto); return; }
+    if (shd()) { sharedNext(auto); return; }
     const n = state.tracks.length;
     if (!n) return;
     if (auto && state.loop === 'one') { audio.currentTime = 0; audio.play().catch(() => {}); return; }
@@ -175,7 +180,7 @@
 
   function prev() {
     clockRewind();
-    if (fb) { if (audio.currentTime > 3) seekTo(0); else sharedMove(-1); return; }
+    if (shd()) { if (audio.currentTime > 3) seekTo(0); else sharedMove(-1); return; }
     const n = state.tracks.length;
     if (!n) return;
     if (audio.currentTime > 3) { audio.currentTime = 0; return; }
@@ -183,7 +188,7 @@
   }
 
   function toggle() {
-    if (fb) { sharedToggle(); return; }
+    if (shd()) { sharedToggle(); return; }
     if (!state.tracks.length) { el.file.click(); return; }
     if (state.index < 0) loadTrack(0, true, 1);
     else if (audio.paused) audio.play().catch(() => {});
@@ -218,7 +223,7 @@
   function updateNow(dir) {
     const t = currentTitle();
     swapTitle(t || 'Belum ada lagu', dir || 1);
-    document.title = t ? t + ' — Lobby Dengar' : 'Lobby Dengar';
+    document.title = t ? t + ' — Xina Music' : 'Xina Music';
     if (!t) { el.tCur.textContent = '0:00'; el.tDur.textContent = '0:00'; el.seek.value = 0; }
   }
 
@@ -251,10 +256,12 @@
     ensureAnalyser();
     if (actx && actx.state === 'suspended') actx.resume();
     document.body.classList.add('is-playing');
+    setMediaState('playing');
     placeArm(); renderDisplay(); renderSeats(); announce();
   });
   audio.addEventListener('pause', () => {
     document.body.classList.remove('is-playing');
+    setMediaState('paused');
     placeArm(); renderDisplay(); renderSeats(); announce();
   });
   audio.addEventListener('ended', () => next(true));
@@ -278,7 +285,7 @@
 
   el.seek.addEventListener('pointerdown', () => { seeking = true; });
   ['pointerup', 'pointercancel', 'change'].forEach((ev) => el.seek.addEventListener(ev, () => { seeking = false; }));
-  el.seek.addEventListener('change', () => { if (fb && shared.pb) pbWrite({ pos: audio.currentTime }); });
+  el.seek.addEventListener('change', () => { if (shd() && shared.pb) pbWrite({ pos: audio.currentTime }); });
   el.seek.addEventListener('input', () => {
     const d = audio.duration;
     if (!d) return;
@@ -299,13 +306,13 @@
   el.file.addEventListener('change', () => { addFiles(el.file.files); el.file.value = ''; });
 
   el.shuffle.addEventListener('click', () => {
-    if (fb) { if (shared.pb) { pbWrite({ shuffle: !shared.pb.shuffle }); flashDisplay(!shared.pb.shuffle ? 'SHUFFLE ON' : 'SHUFFLE OFF'); } return; }
+    if (shd()) { if (shared.pb) { pbWrite({ shuffle: !shared.pb.shuffle }); flashDisplay(!shared.pb.shuffle ? 'SHUFFLE ON' : 'SHUFFLE OFF'); } return; }
     state.shuffle = !state.shuffle;
     el.shuffle.classList.toggle('active', state.shuffle);
     flashDisplay(state.shuffle ? 'SHUFFLE ON' : 'SHUFFLE OFF');
   });
   el.loop.addEventListener('click', () => {
-    if (fb) {
+    if (shd()) {
       if (!shared.pb) return;
       const m = shared.pb.loop === 'all' ? 'one' : shared.pb.loop === 'one' ? 'off' : 'all';
       pbWrite({ loop: m }); flashDisplay('LOOP ' + m.toUpperCase()); return;
@@ -615,12 +622,13 @@
   }
 
   /* ---------- Media Session (kontrol di lock screen) ---------- */
+  function setMediaState(st) { try { if ('mediaSession' in navigator) navigator.mediaSession.playbackState = st; } catch (e) { /* abaikan */ } }
   function updateMediaSession() {
     if (!('mediaSession' in navigator)) return;
     const t = state.tracks[state.index];
     if (!t) return;
     try {
-      navigator.mediaSession.metadata = new MediaMetadata({ title: t.name, artist: 'Lobby Dengar' });
+      navigator.mediaSession.metadata = new MediaMetadata({ title: t.name, artist: 'Xina Music' });
       navigator.mediaSession.setActionHandler('play', toggle);
       navigator.mediaSession.setActionHandler('pause', toggle);
       navigator.mediaSession.setActionHandler('previoustrack', prev);
@@ -650,6 +658,7 @@
       analyser.connect(gainNode);
       gainNode.connect(limiter);
       limiter.connect(actx.destination);
+      actx.onstatechange = () => { if (actx.state !== 'running' && !audio.paused) actx.resume().catch(() => {}); };
       applyGain();
       freq = new Uint8Array(analyser.frequencyBinCount);
       buildBands();
@@ -871,14 +880,19 @@
   };
   const peers = new Map();
   let bc = null;
-  try { bc = new BroadcastChannel('lobby-dengar-v1'); } catch (e) { bc = null; }
+  try { bc = new BroadcastChannel('xina-music-v1'); } catch (e) { bc = null; }
   let fb = null;                                            // { update, meRef } setelah Firebase tersambung
 
   // catetan: teks singkat di bawah avatar, tetap tampil (juga setelah refresh) sampai kamu menyimpan catetan baru
   const NOTE_MAX = 40;
   const cleanNote = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, NOTE_MAX);
   const mine = { note: cleanNote(store.get('lobby.note', '')) };
-  const presenceData = () => ({ name: me.name, hue: me.hue, playing: !audio.paused && state.tracks.length > 0, title: currentTitle().slice(0, 80), note: mine.note || null });
+  // AFK otomatis: tab / aplikasi disembunyikan (HP dikunci atau pindah aplikasi, lagu tetap jalan di background) -> catetan sementara "AFK"
+  const AFK_TEXT = 'AFK', AFK_STALE_MS = 10 * 60 * 1000;     // browser memperlambat timer tab tersembunyi, jadi AFK diberi toleransi heartbeat lebih lama
+  let afk = !!document.hidden;
+  const shownNote = () => (afk ? AFK_TEXT : mine.note);
+  const isStale = (v, now) => !!v.seen && now - v.seen > (v.afk ? AFK_STALE_MS : STALE_MS);
+  const presenceData = () => ({ name: me.name, hue: me.hue, playing: !audio.paused && state.tracks.length > 0, title: currentTitle().slice(0, 80), note: shownNote() || null, afk: afk ? 1 : null });
   let pushT = null;
   function pushPresence(now) {
     if (!fb) return;
@@ -891,7 +905,7 @@
     if (fb) { pushPresence(false); return; }
     if (!bc) return;
     try {
-      bc.postMessage({ type: type || 'hb', id: me.id, name: me.name, hue: me.hue, playing: !audio.paused, title: currentTitle(), note: mine.note });
+      bc.postMessage({ type: type || 'hb', id: me.id, name: me.name, hue: me.hue, playing: !audio.paused, title: currentTitle(), note: shownNote() });
     } catch (e) { /* abaikan */ }
   }
 
@@ -916,9 +930,9 @@
     };
     window.addEventListener('pagehide', () => { try { if (bc) bc.postMessage({ type: 'bye', id: me.id }); } catch (e) { /* abaikan */ } });
   }
-  let beatN = 0;
+  let lastBeat = 0;
   setInterval(() => {
-    if (fb) { if (++beatN % 8 === 0) pushPresence(true); return; }   // heartbeat Firebase tiap ~16 detik
+    if (fb) { if (Date.now() - lastBeat > 15000) { lastBeat = Date.now(); pushPresence(true); } return; }   // heartbeat Firebase tiap ~15 detik (berbasis waktu, jadi tetap benar walau timer tab tersembunyi diperlambat)
     const now = Date.now();
     for (const [id, p] of peers) if (now - p.seen > 7000) peers.delete(id);
     announce();
@@ -926,11 +940,25 @@
   }, 2000);
 
 
+  function setAfk(v) {
+    v = !!v;
+    if (v === afk) return;
+    afk = v;
+    renderSeats(); announce(); pushPresence(true);
+    if (!v) {                                                     // kembali ke layar: bangunkan audio, sinkron ulang posisi lagu
+      lastBeat = Date.now();
+      if (actx && actx.state !== 'running' && !audio.paused) actx.resume().catch(() => {});
+      if (shd()) applyPlayback();
+    }
+  }
+  document.addEventListener('visibilitychange', () => setAfk(document.hidden));
+  document.addEventListener('freeze', () => setAfk(true));
+
   /* ---------- lagu bersama: file diubah jadi base64, disimpan di Firebase, diputar barengan ---------- */
   const MAX_BYTES = 4 * 1024 * 1024;        // batas ukuran file (base64 ~ +33%)
   const CHUNK = 262144;                     // karakter base64 per potongan (kelipatan 4)
   const MAX_SONGS = 10;                     // lagu terlama dihapus otomatis kalau lebih dari ini
-  const shared = { pb: null, loadedSid: null, loadingSid: null, blobs: new Map(), pending: new Map() };
+  const shared = { pb: null, list: [], loadedSid: null, loadingSid: null, blobs: new Map(), pending: new Map() };
   let srvOff = 0, needTap = false, tapUnlockAt = 0;
   const srvNow = () => Date.now() + srvOff;
 
@@ -950,7 +978,7 @@
   }
   function seekTo(t) {
     audio.currentTime = t;
-    if (fb && shared.pb) pbWrite({ pos: t });
+    if (shd() && shared.pb) pbWrite({ pos: t });
   }
   function sharedToggle() {
     if (performance.now() - tapUnlockAt < 400) return;          // ketukan pertama untuk membuka blokir autoplay, bukan jeda
@@ -989,13 +1017,20 @@
   }
 
   /* ---- cache lagu di perangkat (IndexedDB): sekali unduh, selanjutnya gratis bandwidth ---- */
-  const idbOpen = () => new Promise((res) => {
+  let idbP = null;
+  const idbOpen = () => idbP || (idbP = new Promise((res) => {
     try {
       const r = indexedDB.open('lobby-songs', 1);
       r.onupgradeneeded = () => r.result.createObjectStore('s');
       r.onsuccess = () => res(r.result); r.onerror = () => res(null);
     } catch (e) { res(null); }
-  });
+  }));
+  const idbHas = (id) => idbOpen().then((d) => d && new Promise((res) => {
+    try { const q = d.transaction('s').objectStore('s').count(id); q.onsuccess = () => res(q.result > 0); q.onerror = () => res(false); } catch (e) { res(false); }
+  })).then((v) => !!v);
+  const idbKeys = () => idbOpen().then((d) => d && new Promise((res) => {
+    try { const q = d.transaction('s').objectStore('s').getAllKeys(); q.onsuccess = () => res(q.result || []); q.onerror = () => res([]); } catch (e) { res([]); }
+  })).then((v) => v || []);
   const idbGet = (id) => idbOpen().then((d) => d && new Promise((res) => {
     try { const q = d.transaction('s').objectStore('s').get(id); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); } catch (e) { res(null); }
   }));
@@ -1003,18 +1038,23 @@
   const idbDel = (id) => idbOpen().then((d) => { try { d && d.transaction('s', 'readwrite').objectStore('s').delete(id); } catch (e) { /* abaikan */ } });
 
   /* ---- unduh + susun ulang lagu dari potongan base64 ---- */
-  function getSongUrl(t) {
+  const blobUrl = (id, blob) => { if (!shared.blobs.has(id)) shared.blobs.set(id, URL.createObjectURL(blob)); return shared.blobs.get(id); };
+  function getSongUrl(t, cacheOnly) {                          // cacheOnly: hanya dari perangkat (tanpa internet), null kalau belum tersimpan
     if (shared.blobs.has(t.id)) return Promise.resolve(shared.blobs.get(t.id));
+    if (cacheOnly) return idbGet(t.id).then((cached) => (cached ? blobUrl(t.id, cached) : null));
     if (shared.pending.has(t.id)) return shared.pending.get(t.id);
     const p = idbGet(t.id).then((cached) => {
-      if (cached) { const url = URL.createObjectURL(cached); shared.blobs.set(t.id, url); return url; }
+      if (cached) return blobUrl(t.id, cached);
       return fetchSong(t);
     }).finally(() => shared.pending.delete(t.id));
     shared.pending.set(t.id, p);
     return p;
   }
-  function fetchSong(t) {
-    return fb.db.get(fb.db.ref(fb.rdb, 'lobby/chunks/' + t.id)).then(async (snap) => {
+  const fetchSong = (t) => downloadBlob(t).then((blob) => blobUrl(t.id, blob));
+  function downloadBlob(t) {                                    // unduh dari server, simpan ke IndexedDB, kembalikan Blob
+    const get = fb.db.get(fb.db.ref(fb.rdb, 'lobby/chunks/' + t.id));
+    const limit = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 60000));   // koneksi menggantung: jangan tahan pemutar selamanya
+    return Promise.race([get, limit]).then(async (snap) => {
       const v = snap.val();
       if (!v) throw new Error('kosong');
       const arr = Array.isArray(v) ? v : Object.keys(v).sort((a, b) => a - b).map((k) => v[k]);
@@ -1027,31 +1067,40 @@
       }
       const blob = new Blob(parts, { type: t.type || 'audio/mpeg' });
       idbPut(t.id, blob);
-      const url = URL.createObjectURL(blob);
-      shared.blobs.set(t.id, url);
-      return url;
+      return blob;
     });
   }
 
+  let loadGen = 0, loadRetryT = null, loadFails = 0;
   async function loadShared(t) {
-    if (shared.loadedSid) clockRewind();
     if (shared.loadingSid === t.id) return;
+    if (shared.loadedSid) clockRewind();
+    const gen = ++loadGen;
+    clearTimeout(loadRetryT);
     shared.loadingSid = t.id; renderDisplay();
-    try {
-      const url = await getSongUrl(t);
-      if (shared.pb && shared.pb.sid === t.id) {
-        audio.src = url; audio.load();
-        shared.loadedSid = t.id;
-        updateMediaSession();
-      }
-    } catch (e) { toast('Gagal memuat lagu dari lobby'); }
+    let url = null;
+    try { url = await getSongUrl(t); } catch (e) { url = null; }
+    if (gen !== loadGen) return;                                 // keburu ganti lagu lagi (atau offline): panggilan yang lebih baru yang melanjutkan
     shared.loadingSid = null; renderDisplay();
+    if (!url) {                                                  // gagal unduh: coba lagi pelan-pelan, bukan tiap saat
+      loadFails++;
+      if (shd()) loadRetryT = setTimeout(applyPlayback, Math.min(30000, 2000 * loadFails));
+      return;
+    }
+    loadFails = 0;
+    if (shd() && shared.pb && shared.pb.sid === t.id) {
+      audio.src = url; audio.load();
+      shared.loadedSid = t.id;
+      store.set('lobby.last', t.id);
+      updateMediaSession();
+    }
     applyPlayback();
+    prefetchSoon();
   }
 
   // samakan pemutar lokal dengan keadaan bersama
   function applyPlayback() {
-    if (!fb) return;
+    if (!shd()) return;
     const pb = shared.pb;
     state.index = pb ? state.tracks.findIndex((t) => t.id === pb.sid) : -1;
     if (pb) {
@@ -1070,28 +1119,37 @@
         return;
       }
       if (Math.abs(audio.currentTime - target) > 0.4) audio.currentTime = target;
-      if (audio.paused) audio.play().catch(() => { needTap = true; toast('Ketuk layar untuk ikut mendengar'); });
+      if (audio.paused) {
+        const pr = audio.play();
+        if (pr && pr.then) pr.then(() => { needTap = false; }).catch(() => { needTap = true; });   // diblokir autoplay: lanjut begitu layar diketuk
+      }
     } else {
       if (!audio.paused) audio.pause();
       if (Math.abs(audio.currentTime - pb.pos) > 0.3) audio.currentTime = pb.pos;
     }
     renderDisplay();
   }
-  document.addEventListener('pointerdown', () => {
-    if (!fb || !needTap) return;
-    needTap = false; tapUnlockAt = performance.now();
+  const unlockPlay = () => {
+    if (!shd() || !needTap) return;
+    tapUnlockAt = performance.now();
     applyPlayback();
-  }, true);
-  setInterval(() => {                                            // koreksi drift pelan-pelan
-    if (!fb || !shared.pb || !shared.pb.playing || shared.loadedSid !== shared.pb.sid || audio.paused || seeking) return;
+  };
+  for (const ev of ['pointerup', 'touchend', 'click', 'keydown']) document.addEventListener(ev, unlockPlay, true);
+  setInterval(() => {                                            // koreksi drift pelan-pelan + lanjutkan kalau tiba-tiba terhenti (mis. diinterupsi sistem)
+    if (!shd() || !shared.pb || !shared.pb.playing || shared.loadedSid !== shared.pb.sid || seeking) return;
+    if (audio.paused) { if (!needTap && !shared.loadingSid) applyPlayback(); return; }
     const target = sharedPos();
     if (isFinite(audio.duration) && target < audio.duration - 0.3 && Math.abs(audio.currentTime - target) > 0.4) audio.currentTime = target;
   }, 1500);
 
   function startShared() {
     const { db, rdb } = fb;
-    // hapus lagu lokal bawaan mode offline, semua diganti daftar lobby
-    audio.pause(); audio.removeAttribute('src'); shared.loadedSid = null; state.tracks = []; state.index = -1;
+    local.on = false; link.fbOn = true; updateNetClass();
+    // lagu lokal mode offline diganti daftar lobby. Kalau lagu yang sedang berbunyi juga ada di lobby, biarkan terus berbunyi tanpa putus.
+    const keep = state.tracks[state.index];
+    shared.loadedSid = keep && keep.fromLobby && !audio.paused ? keep.id : null;
+    if (!shared.loadedSid) { audio.pause(); audio.removeAttribute('src'); }
+    state.tracks = []; state.index = -1;
     db.onValue(db.ref(rdb, 'lobby/songs'), (snap) => {
       const list = [];
       snap.forEach((c) => {
@@ -1099,14 +1157,118 @@
         if (v && v.n) list.push({ id: c.key, name: String(v.name || 'Tanpa judul').slice(0, 80), dur: 0, url: null, type: v.type, by: String(v.by || ''), at: v.at || Date.now() });
       });
       list.sort((a, b) => a.at - b.at);
+      shared.list = list;
+      store.set('lobby.songs', JSON.stringify(list.map((t) => ({ id: t.id, name: t.name, type: t.type, by: t.by, at: t.at }))));   // daftar ini dipakai saat offline
       const ids = new Set(list.map((x) => x.id));
       for (const [id, url] of shared.blobs) if (!ids.has(id)) { URL.revokeObjectURL(url); shared.blobs.delete(id); idbDel(id); }
+      if (netUp()) idbKeys().then((ks) => { for (const k of ks) if (!ids.has(k)) idbDel(k); });   // buang lagu yang sudah dihapus dari lobby
+      if (local.on) return;                                      // sedang offline: pemutar lokal tidak diganti
       state.tracks = list;
       renderQueue();
       applyPlayback();
+      prefetchSoon();
     });
     db.onValue(db.ref(rdb, 'lobby/playback'), (snap) => { shared.pb = snap.val(); applyPlayback(); });
   }
+
+  /* ---------- offline: lagu lobby yang sudah tersimpan di perangkat tetap bisa diputar sendiri; online lagi -> otomatis masuk lobby ---------- */
+  const netUp = () => navigator.onLine !== false;
+  const link = { fbOn: false };                                  // fbOn: koneksi ke server Firebase aktif
+  function updateNetClass() { document.body.classList.toggle('is-offline', local.on || (!fb && FIREBASE_CONFIGS.length > 0 && !netUp())); }
+
+  async function offlineTracks(list) {                           // hanya lagu yang sudah ada di perangkat
+    const out = [];
+    for (const t of list) {
+      const url = await getSongUrl(t, true);
+      if (url) out.push({ id: t.id, name: t.name, type: t.type, by: t.by, at: t.at, dur: 0, url, fromLobby: true });
+    }
+    return out;
+  }
+  // buka aplikasi tanpa internet (atau server mati): tampilkan pustaka lagu lobby terakhir dari perangkat
+  async function loadLibrary() {
+    if (fb || state.tracks.length) return;
+    let saved = [];
+    try { saved = JSON.parse(store.get('lobby.songs', '[]')) || []; } catch (e) { saved = []; }
+    if (!shared.list.length) shared.list = saved.filter((x) => x && x.id && x.name).map((x) => ({ id: String(x.id), name: String(x.name).slice(0, 80), dur: 0, url: null, type: x.type, by: String(x.by || ''), at: x.at || 0 }));
+    const lib = await offlineTracks(shared.list);
+    if (fb || state.tracks.length || !lib.length) return;      // keburu tersambung, atau pengguna menambah lagu sendiri, atau belum ada yang tersimpan
+    state.tracks = lib;
+    renderQueue();
+    const last = store.get('lobby.last', '');
+    loadTrack(Math.max(0, lib.findIndex((t) => t.id === last)), false, 1);
+    updateNetClass();
+  }
+
+  // koneksi putus saat sedang di lobby: lagu yang sedang berbunyi tidak boleh berhenti, pemutar pindah ke mode lokal
+  async function goLocal() {
+    if (!fb || local.on) return;
+    const lib = await offlineTracks(shared.list);
+    if (!fb || local.on) return;
+    local.on = true;
+    loadGen++; shared.loadingSid = null; clearTimeout(loadRetryT);   // batalkan unduhan yang menggantung
+    peers.clear();
+    state.tracks = lib;
+    state.index = lib.findIndex((t) => t.id === shared.loadedSid);
+    renderQueue(); updateNow(1); renderSeats(); renderDisplay(); updateMediaSession(); updateNetClass();
+  }
+  let rejoining = false;
+  async function goShared() {
+    if (!local.on || rejoining) return;
+    rejoining = true;
+    try {                                                        // ambil keadaan lobby terbaru dulu, supaya tidak sempat loncat ke lagu basi
+      const snap = await Promise.race([fb.db.get(fb.db.ref(fb.rdb, 'lobby/playback')), new Promise((r) => setTimeout(r, 3000))]);
+      if (snap && typeof snap.val === 'function') shared.pb = snap.val();
+    } catch (e) { /* pakai yang ada */ }
+    rejoining = false;
+    if (!local.on || !(link.fbOn && netUp())) return;
+    local.on = false;
+    state.tracks = shared.list; state.index = -1;
+    renderQueue(); updateNetClass();
+    applyPlayback();                                             // ikut keadaan lobby sekarang (lagu & posisi)
+    pushPresence(true);
+    prefetchSoon();
+  }
+  let localT = null;
+  function syncLink() {
+    if (!fb) return;
+    clearTimeout(localT);
+    if (link.fbOn && netUp()) { goShared(); return; }
+    if (local.on) return;
+    if (!netUp()) goLocal();
+    else localT = setTimeout(() => { if (!(link.fbOn && netUp())) goLocal(); }, 4000);   // putus sebentar saja: tunggu dulu
+  }
+
+  /* ---- unduh semua lagu lobby di belakang layar supaya bisa diputar offline dan ganti lagu terasa instan ---- */
+  let prefT = null, prefBusy = false;
+  const prefetchSoon = (ms) => { clearTimeout(prefT); prefT = setTimeout(prefetchAll, ms == null ? 4000 : ms); };
+  async function prefetchAll() {
+    if (prefBusy || !shd() || !netUp()) return;
+    if (navigator.connection && navigator.connection.saveData) return;   // hemat data: jangan unduh diam-diam
+    prefBusy = true;
+    try {
+      const L = shared.list, cur = L.findIndex((t) => t.id === (shared.pb && shared.pb.sid)), st = cur >= 0 ? cur + 1 : 0;
+      for (let k = 0; k < L.length; k++) {                       // lagu setelah yang sedang berbunyi didahulukan
+        const t = L[(st + k) % L.length];
+        if (!shd() || shared.loadingSid) break;                  // lagu yang sedang dibutuhkan didahulukan
+        if (shared.blobs.has(t.id) || await idbHas(t.id)) continue;
+        await downloadBlob(t);
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+    } catch (e) { prefetchSoon(30000); }
+    prefBusy = false;
+  }
+
+  // sambung ke server: dicoba terus sampai berhasil (online lagi, atau server pulih)
+  let fbReady = false, connecting = false;
+  async function connectLobby() {
+    if (fbReady || connecting || !FIREBASE_CONFIGS.length || !netUp()) return;
+    connecting = true;
+    try { fbReady = await initFirebase(); } finally { connecting = false; }
+    if (!fbReady && !fb) loadLibrary();                          // server belum bisa dicapai: pakai lagu yang tersimpan
+  }
+  window.addEventListener('online', () => { updateNetClass(); connectLobby(); syncLink(); });
+  window.addEventListener('offline', () => { updateNetClass(); syncLink(); if (!fb) loadLibrary(); });
+  setInterval(connectLobby, 20000);
 
   /* ---- upload: file -> base64 -> potongan kecil -> Firebase ---- */
   const fileToB64 = (f) => new Promise((res, rej) => {
@@ -1200,10 +1362,11 @@
       const idx = (start + k) % FIREBASE_CONFIGS.length;
       if (await initFirebaseWith(FIREBASE_CONFIGS[idx], idx)) {
         if (k > 0 || idx > 0) toast('Server utama bermasalah, memakai server cadangan');
-        return;
+        return true;
       }
     }
-    console.warn('Semua server Firebase tidak merespon, pakai mode antar-tab saja');
+    console.warn('Semua server Firebase tidak merespon, pakai lagu yang tersimpan / mode antar-tab');
+    return false;
   }
   async function initFirebaseWith(cfg, idx) {
     let app = null, closeApp = null;
@@ -1220,12 +1383,17 @@
       } catch (e) { console.warn('Server ' + idx + ' tidak merespon', e); closeApp(); return false; }
       // sudah tersambung lalu terputus lama (mis. kuota habis di tengah jalan): pindah server dan muat ulang
       let dropT = null;
+      const dropCheck = () => {
+        if (link.fbOn) return;
+        if (!netUp()) { dropT = setTimeout(dropCheck, DROP_MS); return; }      // memang offline: bukan salah server, tunggu saja (jangan muat ulang)
+        try { sessionStorage.setItem('lobby.srv', String((idx + 1) % FIREBASE_CONFIGS.length)); } catch (e) { /* abaikan */ }
+        location.reload();
+      };
       db.onValue(db.ref(rdb, '.info/connected'), (s) => {
         clearTimeout(dropT);
-        if (!s.val()) dropT = setTimeout(() => {
-          try { sessionStorage.setItem('lobby.srv', String((idx + 1) % FIREBASE_CONFIGS.length)); } catch (e) { /* abaikan */ }
-          location.reload();
-        }, DROP_MS);
+        link.fbOn = !!s.val();
+        syncLink();
+        if (!link.fbOn) dropT = setTimeout(dropCheck, DROP_MS);
       });
       const meRef = db.ref(rdb, ROOM + '/' + me.id);
       const lastTap = new Map(), lastChat = new Map(), lastTyp = new Map(), lastGift = new Map(), lastDuet = new Map();
@@ -1236,7 +1404,7 @@
       // kapasitas lobby: maks SEATS orang. Yang ke-9 dst. tidak boleh masuk (urutan ditentukan joinAt dari server)
       const fresh = (snap) => {
         const now = Date.now() + offset, L = [];
-        snap.forEach((c) => { const v = c.val(); if (v && c.key !== me.id && !(v.seen && now - v.seen > STALE_MS)) L.push({ id: c.key, at: v.joinAt || 0 }); });
+        snap.forEach((c) => { const v = c.val(); if (v && c.key !== me.id && !isStale(v, now)) L.push({ id: c.key, at: v.joinAt || 0 }); });
         return L;
       };
       async function admit() {
@@ -1283,7 +1451,7 @@
         snap.forEach((c) => {
           const id = c.key, v = c.val();
           if (id === me.id || !v) return;
-          if (v.seen && now - v.seen > STALE_MS) return;
+          if (isStale(v, now)) return;
           seen.add(id);
           const prevTap = lastTap.get(id);
           lastTap.set(id, v.tap || 0);
@@ -1454,7 +1622,7 @@
       pops.forEach((o) => { if (o !== p) o.close(); });
       onOpen();
       menu.hidden = false;
-      input.focus({ preventScroll: true });                       // fokus langsung di dalam ketukan, supaya keyboard HP ikut terbuka
+      if (input) input.focus({ preventScroll: true });                       // fokus langsung di dalam ketukan, supaya keyboard HP ikut terbuka
       const r = btn.getBoundingClientRect(), vw = document.documentElement.clientWidth, w = menu.offsetWidth;
       const left = Math.round(Math.max(12, Math.min(vw - w - 12, r.right - w)));
       menu.style.top = Math.round(r.bottom + 8) + 'px';
@@ -1462,13 +1630,13 @@
       menu.style.transformOrigin = Math.max(12, Math.min(w - 12, r.left + r.width / 2 - left)) + 'px 0';
       void menu.offsetWidth; menu.classList.add('show');
       btn.setAttribute('aria-expanded', 'true');
-      try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) { /* abaikan */ }
+      if (input) { try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) { /* abaikan */ } }
     };
     p.close = () => {
       if (menu.hidden) return;
       menu.classList.remove('show'); menu.hidden = true;
       btn.setAttribute('aria-expanded', 'false');
-      input.blur();
+      if (input) input.blur();
     };
     btn.addEventListener('click', () => { if (menu.hidden) p.open(); else p.close(); });
     pops.push(p);
@@ -1494,6 +1662,34 @@
   noteMenu.addEventListener('submit', (e) => { e.preventDefault(); saveNote(noteIn.value); notePop.close(); });
   $('#noteClear').addEventListener('click', () => { saveNote(''); notePop.close(); });
   refreshNoteBtn();
+
+  /* ---------- install sebagai aplikasi (PWA): tombol install otomatis di Chrome/Edge/Android, petunjuk manual di iOS/Safari/Firefox ---------- */
+  const installBtn = $('#installBtn'), installMenu = $('#installMenu'), installHelp = $('#installHelp'), installGo = $('#installGo');
+  let installEvt = null;
+  const standalone = () => matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: window-controls-overlay)').matches || navigator.standalone === true;
+  function installHow() {
+    const ua = navigator.userAgent, ios = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (ios) return 'Di iPhone/iPad: ketuk tombol Bagikan (kotak dengan panah ke atas) di Safari, lalu pilih "Tambahkan ke Layar Utama".';
+    if (/firefox/i.test(ua) && !/android/i.test(ua)) return 'Firefox di komputer belum mendukung install. Buka lewat Chrome atau Edge, lalu klik ikon install di kolom alamat. Atau di HP: menu ⋮ lalu "Install".';
+    if (/safari/i.test(ua) && !/chrome|chromium|crios|android/i.test(ua)) return 'Di Safari Mac: menu File lalu "Tambahkan ke Dock".';
+    return 'Buka menu browser (⋮ atau ⋯) lalu pilih "Install aplikasi" atau "Tambahkan ke layar utama".';
+  }
+  const installPop = makePopover(installBtn, installMenu, null, () => {
+    installHelp.textContent = installEvt ? 'Pasang Xina Music di perangkatmu supaya terbuka seperti aplikasi biasa, langsung dari layar utama atau desktop.' : installHow();
+    installGo.hidden = !installEvt;
+  });
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; if (!standalone()) installBtn.hidden = false; });
+  window.addEventListener('appinstalled', () => { installEvt = null; installBtn.hidden = true; installPop.close(); });
+  installGo.addEventListener('click', async () => {
+    if (!installEvt) return;
+    const e = installEvt; installEvt = null; installPop.close();
+    try { e.prompt(); await e.userChoice; } catch (err) { /* abaikan */ }
+    installBtn.hidden = true;
+  });
+  if (!standalone()) installBtn.hidden = false;                // tombol selalu ada kalau belum terpasang; tanpa prompt otomatis, isinya petunjuk manual
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => { /* abaikan */ }); });
+  }
 
   // ganti nama
   const nameIn = $('#nameIn'), nameMenu = $('#nameMenu');
@@ -1630,7 +1826,7 @@
   let seatsReady = false, shownCount = 0;
   function renderSeats() {
     const others = [...peers.values()].sort((a, b) => (a.id < b.id ? -1 : 1));
-    const list = [{ id: me.id, name: me.name, hue: me.hue, self: true, playing: !audio.paused && state.tracks.length > 0, title: currentTitle(), note: mine.note }, ...others].slice(0, SEATS);
+    const list = [{ id: me.id, name: me.name, hue: me.hue, self: true, playing: !audio.paused && state.tracks.length > 0, title: currentTitle(), note: shownNote() }, ...others].slice(0, SEATS);
 
     const n = 1 + peers.size;
     if (n !== shownCount) {
@@ -2016,5 +2212,7 @@
   CLK.last = realMin(); CLK.real = CLK.last; drawClock(CLK.last);
   requestAnimationFrame(frame);
   announce('hello');
-  initFirebase();
+  updateNetClass();
+  connectLobby();
+  setTimeout(() => { if (!fb) loadLibrary(); }, netUp() ? 2500 : 0);     // belum tersambung (offline / server lambat): tampilkan lagu yang tersimpan di perangkat
 })();

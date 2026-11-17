@@ -1,10 +1,10 @@
 <div align="center">
 
-# 🎧 Lobby Dengar
+# 🎧 Xina Music
 
 **Ruang dengar musik bersama secara realtime. Putar lagu barengan dan ngobrol lewat gelembung chat.**
 
-<img src="docs/screens/lobby-light.jpg" alt="Lobby Dengar" width="860">
+<img src="docs/screens/lobby-light.jpg" alt="Xina Music" width="860">
 
 </div>
 
@@ -22,6 +22,9 @@
 - 🥁 **Alat musik ikut lagu.** Drum dipukul mengikuti bass dan snare, simbal bergoyang di hi-hat, tamborin bergetar sesuai treble. Mic, trumpet, ukulele, pianika, dan harmonika bergerak mengikuti vokal dan melodi.
 - 🕰️ **Jam berdetak.** Saat tidak ada lagu, jam besar kembali ke waktu asli dan berbunyi tik-tok tiap detik. Volumenya mengikuti knob.
 - 📝 **Catetan.** Tombol catetan di pojok atas untuk menulis teks singkat (maks 40 karakter). Tampil sebagai gelembung tetap di atas avatarmu, di bawah gelembung chat biasa, dan tidak hilang sampai kamu menyimpan catetan baru.
+- 📲 **Bisa di-install** sebagai aplikasi (PWA) di komputer, Android, dan iPhone/iPad lewat tombol install di pojok atas. Cangkang aplikasi tetap terbuka walau offline, tapi lobby dan lagu bersama tetap butuh internet.
+- 📴 **Offline.** Semua lagu lobby diunduh diam-diam ke perangkat (IndexedDB), jadi tetap bisa diputar sendiri tanpa internet, juga setelah aplikasi dibuka ulang. Saat internet kembali, aplikasi otomatis masuk lobby lagi dan ikut lagu serta posisi yang sedang diputar. Mode Hemat Data di browser menonaktifkan unduhan otomatis ini.
+- 🌙 **AFK otomatis.** Kalau tab atau aplikasi disembunyikan (HP dikunci, pindah aplikasi) lagu tetap jalan di background dan avatarmu menampilkan catetan "AFK" sampai kamu kembali.
 - ✏️ **Ganti nama** lewat ikon di samping tombol catetan.
 - 💬 **Chat gelembung.** Pesan muncul di atas avatar, bertumpuk maksimal 3, dan hilang sendiri setelah 10 detik.
 - 🗜️ **Lagu otomatis dikompres** saat diunggah, jadi lebih kecil dan hemat kuota.
