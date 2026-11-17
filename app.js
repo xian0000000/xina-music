@@ -1680,12 +1680,20 @@
   });
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; if (!standalone()) installBtn.hidden = false; });
   window.addEventListener('appinstalled', () => { installEvt = null; installBtn.hidden = true; installPop.close(); });
-  installGo.addEventListener('click', async () => {
-    if (!installEvt) return;
+  // install langsung: ketuk tombol -> dialog install browser muncul seketika (tanpa menu ⋮ dan tanpa popover perantara)
+  async function installNow() {
+    if (!installEvt) return false;
     const e = installEvt; installEvt = null; installPop.close();
-    try { e.prompt(); await e.userChoice; } catch (err) { /* abaikan */ }
+    try {
+      e.prompt();
+      const c = await e.userChoice;
+      if (c && c.outcome === 'dismissed') { try { localStorage.setItem('xina-install-dismissed', String(Date.now())); } catch (err) { /* abaikan */ } }
+    } catch (err) { /* abaikan */ }
     installBtn.hidden = true;
-  });
+    return true;
+  }
+  installBtn.addEventListener('click', (ev) => { if (installEvt) { ev.stopImmediatePropagation(); ev.preventDefault(); installNow(); } }, true);
+  installGo.addEventListener('click', installNow);
   if (!standalone()) installBtn.hidden = false;                // tombol selalu ada kalau belum terpasang; tanpa prompt otomatis, isinya petunjuk manual
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => { /* abaikan */ }); });
