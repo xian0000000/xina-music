@@ -539,7 +539,7 @@ body.dragging .drop { display: grid; }
   .acts { gap: 6px; }
   #theme { white-space: nowrap; padding: 6px 11px; font-size: 12px; }
   #noteBtn, #msgBtn, #renameBtn, #installBtn { padding: 7px 8px; }
-  .l-seats, .l-spot { --sw: 27px; --rx: min(36cqw, 41cqh); --ry: min(36cqw, 41cqh); }   /* HP potret: tetap lingkaran sempurna di dalam jam seperti di PC (radius dari --rx/--ry bawaan); ruang atas & bawah jadi kosong */
+  .l-seats, .l-spot { --sw: 20px; --rx: min(43cqw, 41cqh); --ry: min(43cqw, 41cqh); }   /* HP potret: avatar dikecilkan dan dikembalikan ke lingkaran luar jam (cincin angka romawi) */
   .avatar { font-size: 12px; }
   .seat .name { max-width: 64px; font-size: 9px; }
   .turntable { --strip: 84px; --w: min(46cqw, calc(52cqh - var(--strip))); scale: .66; }   /* dikecilkan supaya mekanik jam di belakangnya kelihatan */
@@ -616,7 +616,7 @@ body.dragging .drop { display: grid; }
 /* ---------- chat: gelembung di atas kepala + kolom ketik yang muncul sebentar ---------- */
 .seat.talk { z-index: 6; }
 .bubbles {
-  position: absolute; left: 50%; bottom: calc(100% + var(--sw) * .95); translate: calc(-50% + var(--sx, 0px)) 0;
+  position: absolute; left: 50%; bottom: calc(100% + var(--sw) * .95); translate: calc(-50% + var(--sx, 0px)) var(--sy, 0px);
   display: flex; flex-direction: column; align-items: center; gap: 6px;
   width: max-content; max-width: min(150px, 38vw); pointer-events: none;
 }
@@ -906,3 +906,15 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 #msgIn { display: block; width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); color: var(--ink); font: inherit; font-size: 16px; line-height: 1.35; resize: none; outline: none; }
 #msgIn:focus { border-color: var(--ink); }
 .sm-hint.warn { color: var(--ink); }
+
+/* ---------- HP: gelembung chat keluar dari lingkaran (kursi bawah -> gelembung di bawah, kursi atas -> di atas) dan dibuat ramping supaya tidak saling menimpa ---------- */
+@media (max-width: 760px), (max-aspect-ratio: 4/5) {
+  .bubbles { max-width: min(104px, 28vw); gap: 5px; }
+  .bubble { font-size: 11px; padding: 5px 8px; border-width: 1.5px; }
+  .seat.below .bubbles { bottom: auto; top: calc(100% + var(--sw) * .95 + 18px); flex-direction: column-reverse; }
+  .seat.below .bubble { transform-origin: 50% 0; }
+  .seat.below .bubble::after, .seat.below .bubble.unote::after {
+    bottom: auto; top: -6px; border: 0; rotate: 45deg;
+    border-left: 1.5px solid hsl(var(--h, 200) 60% 58%); border-top: 1.5px solid hsl(var(--h, 200) 60% 58%);
+  }
+}

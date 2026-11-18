@@ -1477,7 +1477,7 @@
           if (!first && v.duet && v.duetAt && v.duetAt !== prevDuet && now - v.duetAt < DUET_MS) duetsNew.push([id, v.duet, DUET_MS - (now - v.duetAt)]);   // ajakan duet baru
           const prevTyp = lastTyp.get(id) || 0, curTyp = typeof v.typing === 'number' ? v.typing : 0;
           if (curTyp !== prevTyp) { lastTyp.set(id, curTyp); typers.push([id, curTyp && now - curTyp < TYPE_MS ? '...' : '']); }   // nilai basi (mis. sisa sesi lama) diabaikan
-          if (!first && v.chat && v.chatAt && v.chatAt !== prevChat && now - v.chatAt < 10000) said.push([id, v.chat]);   // pesan baru (bukan riwayat lama)
+          if (!first && v.chat && v.chatAt && v.chatAt !== prevChat && now - v.chatAt < 20000) said.push([id, v.chat]);   // pesan baru (bukan riwayat lama)
           if (!first && prevTap !== undefined && v.tap && v.tap !== prevTap) {
             const k = seatEls.findIndex((x) => x.id === id);
             if (k > 0) burst(k);
@@ -1514,7 +1514,7 @@
   }
   let chatLastSend = 0;
   const chatBar = $('#chatbar'), chatIn = $('#chatIn');
-  const BUBBLE_MAX = 3, BUBBLE_MS = 10000;                      // maks 3 gelembung per orang, tiap pesan hilang setelah 10 detik
+  const BUBBLE_MAX = 3, BUBBLE_MS = 20000;                      // maks 3 gelembung per orang, tiap pesan hilang setelah 20 detik
   function ensureStack(s) {
     if (!s.stack) { s.stack = document.createElement('div'); s.stack.className = 'bubbles'; s.root.append(s.stack); }
     return s.stack;
@@ -1537,7 +1537,7 @@
     if (!b.isConnected || b.dataset.gone) return;
     b.dataset.gone = '1'; clearTimeout(b._t);
     b.classList.remove('show');
-    setTimeout(() => { b.remove(); if (!s.stack.children.length) s.root.classList.remove('talk'); }, 320);
+    setTimeout(() => { b.remove(); if (!s.stack.children.length) s.root.classList.remove('talk'); spreadBubbles(); }, 320);
   }
   function clampStack(st) {                                    // geser tumpukan gelembung supaya tidak keluar dari layar
     st.style.setProperty('--sx', '0px');
@@ -1545,6 +1545,40 @@
     let dx = 0;
     if (r.left < pad) dx = pad - r.left; else if (r.right > vw - pad) dx = vw - pad - r.right;
     if (dx) st.style.setProperty('--sx', Math.round(dx) + 'px');
+    spreadBubbles();
+  }
+  // gelembung milik kursi berbeda tidak boleh saling menimpa: tiap tumpukan yang bertabrakan digeser ke atas (--sy) sampai bebas
+  let spreadRaf = 0;
+  function spreadBubbles() {
+    if (spreadRaf) return;
+    spreadRaf = requestAnimationFrame(() => {
+      spreadRaf = 0;
+      const sts = [];
+      for (const s of seatEls) {
+        const st = s.stack;
+        if (!st || !st.isConnected || !st.querySelector('.bubble:not([data-gone])')) continue;
+        st.style.setProperty('--sy', '0px');
+        sts.push(st);
+      }
+      if (sts.length < 2) return;
+      const gap = 6;
+      const box = sts.map((st) => { const r = st.getBoundingClientRect(); return { st, top: r.top, bottom: r.bottom, left: r.left, right: r.right, dy: 0, dn: !!st.parentNode.classList.contains('below') && getComputedStyle(st).top !== 'auto' && getComputedStyle(st).bottom === 'auto' }; });
+      for (let it = 0; it < 12; it++) {
+        let moved = false;
+        for (let i = 0; i < box.length; i++) for (let j = i + 1; j < box.length; j++) {
+          const a = box[i], b = box[j];
+          if (a.right + gap <= b.left || a.left >= b.right + gap) continue;           // tidak sejajar horizontal
+          const aT = a.top + a.dy, aB = a.bottom + a.dy, bT = b.top + b.dy, bB = b.bottom + b.dy;
+          if (aB + gap <= bT || aT >= bB + gap) continue;                             // tidak bertumpuk vertikal
+          const up = (aT + aB) <= (bT + bB) ? a : b, lo = up === a ? b : a;
+          const need = up.bottom + up.dy - (lo.top + lo.dy) + gap;
+          if (!up.dn) up.dy -= need; else if (lo.dn) lo.dy += need; else up.dy -= need;   // yang menjorok ke atas naik, yang menjorok ke bawah turun
+          moved = true;
+        }
+        if (!moved) break;
+      }
+      for (const b of box) if (b.dy) b.st.style.setProperty('--sy', Math.round(b.dy) + 'px');
+    });
   }
   function showBubble(k, text) {
     const s = seatEls[k];
@@ -1759,7 +1793,7 @@
   const msgBtn = $('#msgBtn'), msgMenu = $('#msgMenu'), msgIn = $('#msgIn'), msgList = $('#msgList'), msgEmpty = $('#msgEmpty'),
     msgCount = $('#msgCount'), msgHint = $('#msgHint');
   const MSG_HINT = msgHint.textContent;
-  const msgs = { list: [], unsub: null, sentAt: 0, hintT: 0 };
+  const msgs = { list: [], raw: [], unsub: null, sentAt: 0, hintT: 0 };
   const cleanMsg = (s) => Array.from(String(s == null ? '' : s).replace(/\s+/g, ' ').trim()).slice(0, MSG_MAX).join('');
   function msgAgo(at) {
     const d = Math.max(0, Date.now() - at) / 1000;
@@ -1798,7 +1832,7 @@
       if (m.mine) {
         const x = document.createElement('button');
         x.type = 'button'; x.className = 'msg-x'; x.textContent = '×'; x.title = 'Hapus pesanmu'; x.setAttribute('aria-label', 'Hapus pesanmu');
-        x.addEventListener('click', () => { if (fb) fb.db.remove(fb.db.ref(fb.rdb, 'lobby/messages/' + m.id)).catch(() => setMsgHint('Gagal menghapus', true)); });
+        x.addEventListener('click', () => { if (fb) msgs.raw.filter((r) => r.mine).forEach((r) => fb.db.remove(fb.db.ref(fb.rdb, 'lobby/messages/' + r.id)).catch(() => setMsgHint('Gagal menghapus', true))); });
         head.append(x);
       }
       const tx = document.createElement('div'); tx.className = 'msg-t'; tx.textContent = m.text; setLang(tx, m.text);
@@ -1819,33 +1853,37 @@
     if (now - msgs.sentAt < MSG_GAP) { setMsgHint('Tunggu sebentar sebelum kirim lagi', true); return; }
     msgs.sentAt = now;
     const { db, rdb } = fb;
-    db.set(db.push(db.ref(rdb, 'lobby/messages')), { name: me.name, hue: me.hue, text, at: db.serverTimestamp(), k: msgKey })
-      .then(trimMsgs)
+    // satu pesan per pengirim: disimpan di kunci tetap (msgKey), kirim lagi = teks lama ditimpa dan naik ke paling atas
+    const old = msgs.raw.filter((m) => m.mine && m.id !== msgKey);       // sisa pesan lama (sebelum aturan satu pesan) ikut dibersihkan
+    db.set(db.ref(rdb, 'lobby/messages/' + msgKey), { name: me.name, hue: me.hue, text, at: db.serverTimestamp(), k: msgKey })
+      .then(() => { old.forEach((m) => db.remove(db.ref(rdb, 'lobby/messages/' + m.id)).catch(() => {})); return trimMsgs(); })
       .catch(() => { msgs.sentAt = 0; setMsgHint('Gagal mengirim. Coba lagi.', true); });
     msgIn.value = ''; countMsg();                               // tampil langsung (Firebase menaruh tulisan lokal dulu), tidak menunggu server
   });
-  // simpan hanya MSG_KEEP pesan terbaru: kunci push berurutan waktu, jadi yang lebih kecil dari kunci tertua yang dipertahankan dibuang
+  // simpan hanya MSG_KEEP pesan terbaru: kunci sekarang per pengirim (bukan berurutan waktu), jadi urutkan berdasarkan waktu kirim
   async function trimMsgs() {
     if (!fb) return;
     const { db, rdb } = fb, ref = db.ref(rdb, 'lobby/messages');
-    const keep = await db.get(db.query(ref, db.limitToLast(MSG_KEEP)));
-    if (keep.numChildren() < MSG_KEEP) return;
-    let oldest = null; keep.forEach((c) => { if (oldest === null) oldest = c.key; });
-    const old = await db.get(db.query(ref, db.orderByKey(), db.endBefore(oldest), db.limitToFirst(50)));
-    old.forEach((c) => { db.remove(c.ref).catch(() => {}); });
+    const all = await db.get(ref);
+    if (all.numChildren() <= MSG_KEEP) return;
+    const L = []; all.forEach((c) => { L.push({ key: c.key, at: Number((c.val() || {}).at) || 0 }); });
+    L.sort((a, b) => a.at - b.at);
+    L.slice(0, L.length - MSG_KEEP).forEach((x) => { db.remove(db.ref(rdb, 'lobby/messages/' + x.key)).catch(() => {}); });
   }
   function startMessages() {
     if (!fb) return;
     const { db, rdb } = fb;
     if (msgs.unsub) { try { msgs.unsub(); } catch (e) { /* abaikan */ } }
-    msgs.unsub = db.onValue(db.query(db.ref(rdb, 'lobby/messages'), db.limitToLast(MSG_KEEP)), (snap) => {
+    msgs.unsub = db.onValue(db.query(db.ref(rdb, 'lobby/messages'), db.orderByChild('at'), db.limitToLast(MSG_KEEP)), (snap) => {
       const L = [];
       snap.forEach((c) => {
         const v = c.val();
-        if (v && typeof v.text === 'string' && v.text) L.push({ id: c.key, name: String(v.name || '?').slice(0, 24), hue: Number(v.hue) || 0, text: cleanMsg(v.text), at: Number(v.at) || Date.now(), mine: v.k === msgKey });
+        if (v && typeof v.text === 'string' && v.text) L.push({ id: c.key, name: String(v.name || '?').slice(0, 24), hue: Number(v.hue) || 0, text: cleanMsg(v.text), at: Number(v.at) || Date.now(), mine: v.k === msgKey, by: String(v.k || c.key) });
       });
       L.sort((a, b) => a.at - b.at);
-      msgs.list = L;
+      const last = new Map(); L.forEach((m, i) => { last.set(m.by, i); });          // satu pesan per pengirim: yang lama dari orang yang sama disembunyikan
+      msgs.raw = L;
+      msgs.list = L.filter((m, i) => last.get(m.by) === i);
       if (!msgMenu.hidden) { renderMsgs(); markMsgsSeen(); }
       refreshMsgBtn();
     });
@@ -1996,7 +2034,7 @@
     for (let k = 0; k < SEATS; k++) {
       const a = ((67.5 + k * 45) * Math.PI) / 180;               // melingkar, digeser 22.5° supaya tidak menabrak sudut alat; kamu = kursi pertama
       const root = document.createElement('div');
-      root.className = 'seat empty';
+      root.className = 'seat empty' + (Math.sin(a) > 0 ? ' below' : '');     // kursi separuh bawah: di HP gelembung chat keluar ke bawah
       root.style.setProperty('--c', Math.cos(a).toFixed(4));
       root.style.setProperty('--s', Math.sin(a).toFixed(4));
       root.style.setProperty('--i', k);
