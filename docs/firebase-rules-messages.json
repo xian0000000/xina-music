@@ -1,0 +1,15 @@
+{
+  "rules": {
+    "lobby": {
+      "messages": {
+        ".read": true,
+        "$id": {
+          ".write": "!data.exists() || !newData.exists()",
+          ".validate": "newData.hasChildren(['name', 'text', 'at', 'k']) && newData.child('text').isString() && newData.child('text').val().length > 0 && newData.child('text').val().length <= 200 && newData.child('name').isString() && newData.child('name').val().length <= 24 && newData.child('hue').isNumber() && newData.child('at').val() === now && newData.child('k').isString() && newData.child('k').val().length <= 24",
+          "name": {}, "text": {}, "hue": {}, "at": {}, "k": {},
+          "$other": { ".validate": false }
+        }
+      }
+    }
+  }
+}

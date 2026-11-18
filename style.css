@@ -90,13 +90,13 @@ h1 small { display: block; color: var(--mute); font-size: 12px; font-weight: 400
 .room { color: var(--mute); font-size: 12px; }
 .room b { color: var(--ink); font-weight: 600; }
 .is-offline .room::after { content: " · offline"; }
-#theme, #chatBtn, #noteBtn, #renameBtn, #installBtn {
+#theme, #chatBtn, #noteBtn, #msgBtn, #renameBtn, #installBtn {
   border: 1px solid var(--line); background: var(--soft); border-radius: 999px;
   padding: 6px 14px; font-size: 13px;
   transition: transform .25s, background .3s, border-color .3s;
 }
-#theme:hover, #chatBtn:hover, #noteBtn:hover, #renameBtn:hover, #installBtn:hover { transform: scale(1.08) rotate(-3deg); }
-#theme:active, #chatBtn:active, #noteBtn:active, #renameBtn:active, #installBtn:active { transform: scale(.94); }
+#theme:hover, #chatBtn:hover, #noteBtn:hover, #msgBtn:hover, #renameBtn:hover, #installBtn:hover { transform: scale(1.08) rotate(-3deg); }
+#theme:active, #chatBtn:active, #noteBtn:active, #msgBtn:active, #renameBtn:active, #installBtn:active { transform: scale(.94); }
 
 /* ---------- panggung ---------- */
 .stage {
@@ -536,7 +536,10 @@ body.dragging .drop { display: grid; }
   .app { padding: 0 8px 8px; }
   .top { padding: 10px 4px 2px; }
   .room { display: none; }
-  .l-seats, .l-spot { --sw: 30px; --rx: 38cqw; --ry: 42cqh; }   /* HP potret: lingkaran tidak muat, pakai oval tinggi */
+  .acts { gap: 6px; }
+  #theme { white-space: nowrap; padding: 6px 11px; font-size: 12px; }
+  #noteBtn, #msgBtn, #renameBtn, #installBtn { padding: 7px 8px; }
+  .l-seats, .l-spot { --sw: 27px; --rx: min(36cqw, 41cqh); --ry: min(36cqw, 41cqh); }   /* HP potret: tetap lingkaran sempurna di dalam jam seperti di PC (radius dari --rx/--ry bawaan); ruang atas & bawah jadi kosong */
   .avatar { font-size: 12px; }
   .seat .name { max-width: 64px; font-size: 9px; }
   .turntable { --strip: 84px; --w: min(46cqw, calc(52cqh - var(--strip))); scale: .66; }   /* dikecilkan supaya mekanik jam di belakangnya kelihatan */
@@ -678,11 +681,17 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 .gfx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 60; }
 
 /* ---------- duet ---------- */
-.seat.duet .avatar .ins { animation: duet-bob .55s ease-in-out infinite alternate; }
-.seat.duet .avatar .ins::before { animation: duet-glow .55s ease-in-out infinite alternate; }
-@keyframes duet-bob { from { transform: rotate(-4deg) scale(1); } to { transform: rotate(4deg) scale(1.08); } }
-@keyframes duet-glow { from { box-shadow: 0 0 0 2px hsl(var(--h) 80% 60% / .25), 0 2px 8px rgba(0,0,0,.18); } to { box-shadow: 0 0 0 10px hsl(var(--h) 80% 60% / .12), 0 0 22px hsl(var(--h) 90% 60% / .7); } }
-@media (prefers-reduced-motion: reduce) { .seat.duet .avatar .ins, .seat.duet .avatar .ins::before { animation: none; } }
+/* duet: goyangan pelan seperti bandul + cahaya yang "bernapas". Semua hanya transform/opacity (dikerjakan GPU), tiap kursi beda fase supaya tidak serempak seperti metronom */
+.seat.duet .avatar .ins { isolation: isolate; animation: duet-rot 2.8s ease-in-out infinite alternate, duet-scl 1.9s ease-in-out infinite alternate; animation-delay: calc(var(--h, 0) * -.012s), calc(var(--h, 0) * -.008s); }
+.seat.duet .avatar .ins::after {
+  content: ''; position: absolute; left: 50%; top: 50%; width: 118%; aspect-ratio: 1; translate: -50% -50%; z-index: -1; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, hsl(var(--h) 90% 62% / .55), hsl(var(--h) 90% 62% / .18) 60%, hsl(var(--h) 90% 62% / 0));
+  animation: duet-glow 2.4s ease-in-out infinite alternate; animation-delay: calc(var(--h, 0) * -.01s);
+}
+@keyframes duet-rot { from { rotate: -2.4deg; } to { rotate: 2.4deg; } }
+@keyframes duet-scl { from { scale: 1; } to { scale: 1.045; } }
+@keyframes duet-glow { from { opacity: .3; scale: .86; } to { opacity: .95; scale: 1.1; } }
+@media (prefers-reduced-motion: reduce) { .seat.duet .avatar .ins, .seat.duet .avatar .ins::after { animation: none; } }
 
 /* ---------- menu hadiah: senada dengan gelembung chat (kartu, bingkai warna avatar, ekor) ---------- */
 .giftmenu {
@@ -805,7 +814,7 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 }
 
 /* ---------- catetan ---------- */
-#noteBtn, #renameBtn, #installBtn { display: grid; place-items: center; padding: 7px 10px; color: var(--ink); cursor: pointer; }
+#noteBtn, #msgBtn, #renameBtn, #installBtn { display: grid; place-items: center; padding: 7px 10px; color: var(--ink); cursor: pointer; }
 #noteBtn.has { border-color: var(--ink); }
 .notemenu {
   position: fixed; z-index: 70; top: 52px; left: 12px;
@@ -877,3 +886,23 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 .bubble:lang(zh) { font-family: "Poppins", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", "WenQuanYi Micro Hei", system-ui, sans-serif; }
 .bubble:lang(ja) { font-family: "Poppins", "Hiragino Sans", "Noto Sans JP", "Noto Sans CJK JP", "Yu Gothic", "Meiryo", system-ui, sans-serif; }
 .bubble:lang(ko) { font-family: "Poppins", "Apple SD Gothic Neo", "Noto Sans KR", "Noto Sans CJK KR", "Malgun Gothic", system-ui, sans-serif; }
+
+/* ---------- papan pesan ---------- */
+#msgBtn { position: relative; }
+#msgBtn.new::after { content: ""; position: absolute; top: 3px; right: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--red, #e5484d); box-shadow: 0 0 0 2px var(--soft); animation: beat 2.4s ease-in-out infinite; }
+.msgmenu { width: min(340px, calc(100vw - 24px)); }
+.msg-list { list-style: none; margin: 0 0 10px; padding: 0 2px 0 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; overscroll-behavior: contain;
+  max-height: clamp(80px, calc(100dvh - 300px), 300px); }
+.msg-list:empty { display: none; }
+.msg { padding: 8px 10px 9px; border-radius: 12px; border: 1px solid var(--line); border-left: 3px solid hsl(var(--h, 200) 60% 58%); background: var(--soft); }
+.msg-h { display: flex; align-items: baseline; gap: 8px; font-size: 11px; color: var(--mute); }
+.msg-h b { color: var(--ink); font-weight: 600; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-h time { flex: 1; font-variant-numeric: tabular-nums; }
+.msg-x { flex: none; align-self: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--mute); font-size: 16px; line-height: 1; cursor: pointer; }
+.msg-x:hover, .msg-x:focus-visible { color: var(--ink); background: var(--card); }
+.msg-t { margin-top: 3px; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
+.msg-empty { margin: 2px 0 10px; padding: 14px 0; text-align: center; color: var(--mute); font-size: 12px; }
+.msg-empty[hidden] { display: none; }
+#msgIn { display: block; width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); color: var(--ink); font: inherit; font-size: 16px; line-height: 1.35; resize: none; outline: none; }
+#msgIn:focus { border-color: var(--ink); }
+.sm-hint.warn { color: var(--ink); }

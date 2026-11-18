@@ -1180,6 +1180,7 @@
       prefetchSoon();
     });
     db.onValue(db.ref(rdb, 'lobby/playback'), (snap) => { shared.pb = snap.val(); applyPlayback(); });
+    startMessages();
   }
 
   /* ---------- offline: lagu lobby yang sudah tersimpan di perangkat tetap bisa diputar sendiri; online lagi -> otomatis masuk lobby ---------- */
@@ -1751,6 +1752,106 @@
   $('#noteClear').addEventListener('click', () => { saveNote(''); notePop.close(); });
   refreshNoteBtn();
 
+  /* ---------- papan pesan: pesan untuk semua orang, disimpan di Firebase (lobby/messages) dan tidak hilang walau pengirimnya sudah pergi ---------- */
+  const MSG_MAX = 200, MSG_KEEP = 80, MSG_GAP = 4000;       // maks karakter, jumlah pesan terbaru yang disimpan, jeda kirim (ms)
+  // kunci penulis tetap di perangkat ini (tidak sama dengan me.id yang acak tiap halaman dibuka); dipakai untuk menandai pesan milik sendiri
+  const msgKey = (() => { let k = store.get('lobby.k', ''); if (!/^[a-z0-9]{8,24}$/.test(k)) { k = uid() + uid(); store.set('lobby.k', k); } return k; })();
+  const msgBtn = $('#msgBtn'), msgMenu = $('#msgMenu'), msgIn = $('#msgIn'), msgList = $('#msgList'), msgEmpty = $('#msgEmpty'),
+    msgCount = $('#msgCount'), msgHint = $('#msgHint');
+  const MSG_HINT = msgHint.textContent;
+  const msgs = { list: [], unsub: null, sentAt: 0, hintT: 0 };
+  const cleanMsg = (s) => Array.from(String(s == null ? '' : s).replace(/\s+/g, ' ').trim()).slice(0, MSG_MAX).join('');
+  function msgAgo(at) {
+    const d = Math.max(0, Date.now() - at) / 1000;
+    if (d < 45) return 'baru saja';
+    if (d < 3600) return Math.round(d / 60) + ' mnt lalu';
+    if (d < 86400) return Math.round(d / 3600) + ' jam lalu';
+    if (d < 86400 * 30) return Math.round(d / 86400) + ' hari lalu';
+    return new Date(at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  const msgSeen = () => parseFloat(store.get('lobby.msgSeen', '0')) || 0;
+  const msgNewest = () => msgs.list.reduce((m, x) => Math.max(m, x.at), 0);
+  function markMsgsSeen() { const n = msgNewest(); if (n > msgSeen()) store.set('lobby.msgSeen', String(n)); }
+  function refreshMsgBtn() {
+    const seen = msgSeen(), unread = msgMenu.hidden && msgs.list.some((m) => !m.mine && m.at > seen);
+    msgBtn.classList.toggle('new', unread);
+    msgBtn.title = unread ? 'Papan pesan — ada pesan baru' : 'Papan pesan (pesan untuk semua, tidak hilang)';
+  }
+  function setMsgHint(text, warn) {
+    clearTimeout(msgs.hintT);
+    msgHint.textContent = text; msgHint.classList.toggle('warn', !!warn);
+    if (warn) msgs.hintT = setTimeout(() => { msgHint.textContent = MSG_HINT; msgHint.classList.remove('warn'); }, 3500);
+  }
+  function renderMsgs() {
+    msgList.textContent = '';
+    const L = msgs.list.slice().reverse();                      // terbaru di atas
+    msgEmpty.hidden = L.length > 0;
+    msgEmpty.textContent = fb ? 'Belum ada pesan. Jadi yang pertama.' : 'Pesan muncul setelah tersambung ke lobby.';
+    for (const m of L) {
+      const li = document.createElement('li');
+      li.className = 'msg' + (m.mine ? ' mine' : '');
+      li.style.setProperty('--h', String(m.hue));
+      const head = document.createElement('div'); head.className = 'msg-h';
+      const nm = document.createElement('b'); nm.textContent = m.name; setLang(nm, m.name);
+      const tm = document.createElement('time'); tm.textContent = msgAgo(m.at); tm.title = new Date(m.at).toLocaleString('id-ID');
+      head.append(nm, tm);
+      if (m.mine) {
+        const x = document.createElement('button');
+        x.type = 'button'; x.className = 'msg-x'; x.textContent = '×'; x.title = 'Hapus pesanmu'; x.setAttribute('aria-label', 'Hapus pesanmu');
+        x.addEventListener('click', () => { if (fb) fb.db.remove(fb.db.ref(fb.rdb, 'lobby/messages/' + m.id)).catch(() => setMsgHint('Gagal menghapus', true)); });
+        head.append(x);
+      }
+      const tx = document.createElement('div'); tx.className = 'msg-t'; tx.textContent = m.text; setLang(tx, m.text);
+      li.append(head, tx);
+      msgList.append(li);
+    }
+  }
+  const countMsg = () => { msgCount.textContent = Array.from(msgIn.value).length + '/' + MSG_MAX; };
+  const msgPop = makePopover(msgBtn, msgMenu, msgIn, () => { renderMsgs(); countMsg(); markMsgsSeen(); msgBtn.classList.remove('new'); });
+  msgIn.addEventListener('input', countMsg);
+  msgIn.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); msgMenu.requestSubmit(); } });
+  msgMenu.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = cleanMsg(msgIn.value);
+    if (!text) return;
+    if (!fb) { setMsgHint('Butuh koneksi ke lobby untuk mengirim pesan', true); return; }
+    const now = Date.now();
+    if (now - msgs.sentAt < MSG_GAP) { setMsgHint('Tunggu sebentar sebelum kirim lagi', true); return; }
+    msgs.sentAt = now;
+    const { db, rdb } = fb;
+    db.set(db.push(db.ref(rdb, 'lobby/messages')), { name: me.name, hue: me.hue, text, at: db.serverTimestamp(), k: msgKey })
+      .then(trimMsgs)
+      .catch(() => { msgs.sentAt = 0; setMsgHint('Gagal mengirim. Coba lagi.', true); });
+    msgIn.value = ''; countMsg();                               // tampil langsung (Firebase menaruh tulisan lokal dulu), tidak menunggu server
+  });
+  // simpan hanya MSG_KEEP pesan terbaru: kunci push berurutan waktu, jadi yang lebih kecil dari kunci tertua yang dipertahankan dibuang
+  async function trimMsgs() {
+    if (!fb) return;
+    const { db, rdb } = fb, ref = db.ref(rdb, 'lobby/messages');
+    const keep = await db.get(db.query(ref, db.limitToLast(MSG_KEEP)));
+    if (keep.numChildren() < MSG_KEEP) return;
+    let oldest = null; keep.forEach((c) => { if (oldest === null) oldest = c.key; });
+    const old = await db.get(db.query(ref, db.orderByKey(), db.endBefore(oldest), db.limitToFirst(50)));
+    old.forEach((c) => { db.remove(c.ref).catch(() => {}); });
+  }
+  function startMessages() {
+    if (!fb) return;
+    const { db, rdb } = fb;
+    if (msgs.unsub) { try { msgs.unsub(); } catch (e) { /* abaikan */ } }
+    msgs.unsub = db.onValue(db.query(db.ref(rdb, 'lobby/messages'), db.limitToLast(MSG_KEEP)), (snap) => {
+      const L = [];
+      snap.forEach((c) => {
+        const v = c.val();
+        if (v && typeof v.text === 'string' && v.text) L.push({ id: c.key, name: String(v.name || '?').slice(0, 24), hue: Number(v.hue) || 0, text: cleanMsg(v.text), at: Number(v.at) || Date.now(), mine: v.k === msgKey });
+      });
+      L.sort((a, b) => a.at - b.at);
+      msgs.list = L;
+      if (!msgMenu.hidden) { renderMsgs(); markMsgsSeen(); }
+      refreshMsgBtn();
+    });
+  }
+  refreshMsgBtn();
+
   /* ---------- install sebagai aplikasi (PWA): tombol install otomatis di Chrome/Edge/Android, petunjuk manual di iOS/Safari/Firefox ---------- */
   const installBtn = $('#installBtn'), installMenu = $('#installMenu'), installHelp = $('#installHelp'), installGo = $('#installGo');
   let installEvt = null;
@@ -2030,11 +2131,21 @@
   document.body.append(gfx);
   const gx = gfx.getContext('2d');
   let gD = 1;
-  function gSize() { gD = Math.min(2, window.devicePixelRatio || 1); gfx.width = Math.round(window.innerWidth * gD); gfx.height = Math.round(window.innerHeight * gD); }
-  gSize(); window.addEventListener('resize', gSize);
+  function gSize() { gD = Math.min(1.5, window.devicePixelRatio || 1); gfx.width = Math.round(window.innerWidth * gD); gfx.height = Math.round(window.innerHeight * gD); }
+  gSize(); window.addEventListener('resize', () => { gSize(); cMemo.clear(); });
   const shots = [], parts = [];
   let gRaf = 0, gPrev = 0;
-  const center = (k) => { const r = seatEls[k].av.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+  // posisi kursi: membaca getBoundingClientRect tiap frame memaksa browser menghitung ulang gaya (animasi CSS kursi terus berubah), jadi di dalam gLoop
+  // dibaca paling sering tiap ~60 ms, lalu dihaluskan (lerp) tiap frame supaya ujung pita tetap bergerak mulus mengikuti avatar
+  const cMemo = new Map(); let cOn = false, cReadT = -1e9, cFresh = false, cId = 0;
+  const readCenter = (k) => { const r = seatEls[k].av.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+  const center = (k) => {
+    if (!cOn) return readCenter(k);
+    let m = cMemo.get(k);
+    if (!m) { const c = readCenter(k); m = { x: c.x, y: c.y, tx: c.x, ty: c.y, f: cId }; cMemo.set(k, m); }
+    else if (cFresh && m.f !== cId) { const c = readCenter(k); m.tx = c.x; m.ty = c.y; m.f = cId; }
+    return m;
+  };
   function flyGift(kf, kt, g) {
     if (kt < 0 || !seatEls[kt]) return;
     const b = center(kt), a = kf >= 0 && seatEls[kf] ? center(kf) : { x: window.innerWidth / 2, y: window.innerHeight + 30 };
@@ -2072,7 +2183,9 @@
   }
   // tema terang: blend 'lighter' tidak kelihatan di latar putih, jadi pakai warna pekat biasa; tema gelap: menyala (additive)
   let gLight = false;
+  let gThemeT = -1e9;
   function gTheme() {
+    const tn = performance.now(); if (tn - gThemeT < 600) return; gThemeT = tn;     // cukup cek tema tiap 0,6 dtk (getComputedStyle tiap frame memaksa hitung ulang gaya)
     const c = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(), m = /^#([0-9a-f]{6})$/i.exec(c);
     gLight = m ? parseInt(m[1].slice(0, 2), 16) * .3 + parseInt(m[1].slice(2, 4), 16) * .59 + parseInt(m[1].slice(4, 6), 16) * .11 > 128 : false;
   }
@@ -2152,12 +2265,19 @@
     }
     c.restore();
   }
+  const pulseT = new Map();
+  function pulse(k, now) {                                     // cincin tipis yang memudar dari avatar anggota duet, tiap ~1,8 dtk (satu per avatar walau ia punya dua pita)
+    if (now - (pulseT.get(k) || 0) < 1800) return;
+    pulseT.set(k, now);
+    const c = center(k), h = Number(seatEls[k].av.style.getPropertyValue('--h')) || 200;
+    parts.push({ k: 'ring', x: c.x, y: c.y, h, age: 0, life: 1.4, r: 58, a: .4, w: 3 });
+  }
   function drawDuet(d, ka, kb, age, now) {
     const A = center(ka), B = center(kb), dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy) || 1;
     const ux = dx / L, uy = dy / L, nx = -uy, ny = ux, R = Math.min(30, L * .3);
     const sx = A.x + ux * R, sy = A.y + uy * R, ex = B.x - ux * R, ey = B.y - uy * R, len = L - 2 * R;
-    const env = Math.max(0, Math.min(1, age / .5, (d.dur - age) / .8));
-    const bow = (d.bowAbs != null ? d.bowAbs : len * .22 * d.bow) * (1 + .14 * Math.sin(age * 1.3)), qx = (sx + ex) / 2 + nx * bow * 2, qy = (sy + ey) / 2 + ny * bow * 2;   // lengkungnya ikut "bernapas"
+    const e0 = Math.max(0, Math.min(1, age / 1.1, (d.dur - age) / 1.6)), env = e0 * e0 * (3 - 2 * e0);   // muncul dan hilang pelan (smoothstep), tidak mendadak
+    const qx = (sx + ex) / 2, qy = (sy + ey) / 2;                // jalur dasar pita LURUS antar dua avatar (tidak melengkung); yang bergerak hanya liukan gelombangnya
     const ha = Number(seatEls[ka].av.style.getPropertyValue('--h')) || 200;
     let hb = Number(seatEls[kb].av.style.getPropertyValue('--h')) || 320;
     hb = ha + ((hb - ha + 540) % 360) - 180;                    // campur warna lewat jalur terpendek di lingkaran warna
@@ -2166,44 +2286,54 @@
       const m = 1 - t, x = m * m * sx + 2 * m * t * qx + t * t * ex, y = m * m * sy + 2 * m * t * qy + t * t * ey;
       return { x: x + nx * off, y: y + ny * off };
     };
-    const amp = (7 + 3 * Math.sin(age * 1.7)) * env;
-    const wave = (t, ph) => Math.pow(Math.sin(t * Math.PI), 1.2) * amp * (Math.sin(t * 7 - age * 3.2 + ph) + .45 * Math.sin(t * 13 + age * 2.1 + ph * 1.3)) / 1.45;   // dua gelombang campur: mengalir, tidak kaku
+    const amp = (6.5 + 2.5 * Math.sin(age * 1.1)) * env;
+    const wave = (t, ph) => Math.pow(Math.sin(t * Math.PI), 1.2) * amp * (Math.sin(t * 7 - age * 2.1 + ph) + .45 * Math.sin(t * 13 + age * 1.4 + ph * 1.3)) / 1.45;   // dua gelombang campur, pelan: mengalir, tidak kaku
+    // pita digambar sebagai SATU garis dengan gradasi warna + transparansi (ujung memudar), bukan puluhan potongan: jauh lebih ringan dan tidak bergerigi
+    const key = ha + '|' + hb + '|' + (gLight ? 1 : 0);
+    if (d.ck !== key) {
+      d.ck = key;
+      const stops = [[0, 0], [.2, .7], [.5, 1], [.8, .7], [1, 0]];
+      d.cs = stops.map(([t, a]) => [t, hc(hue(t), tone, a)]);
+      d.cg = stops.map(([t, a]) => [t, hc(hue(t), tone + 8, a)]);
+    }
+    const grad = (cols) => { const g = gx.createLinearGradient(sx, sy, ex, ey); for (const [t, c] of cols) g.addColorStop(t, c); return g; };
     gx.lineCap = 'round'; gx.lineJoin = 'round';
-    const N = 56;
-    for (let i = 0; i < N; i++) {                              // cahaya lembut di bawah pita
-      const t0 = i / N, t1 = (i + 1) / N, q0 = pt(t0, 0), q1 = pt(t1, 0);
-      gx.strokeStyle = hc(hue((t0 + t1) / 2), tone + 8, (.16 * env).toFixed(3)); gx.lineWidth = 13 * Math.sin((t0 + t1) / 2 * Math.PI) + 2;
-      gx.beginPath(); gx.moveTo(q0.x, q0.y); gx.lineTo(q1.x, q1.y); gx.stroke();
+    gx.beginPath(); gx.moveTo(sx, sy); gx.quadraticCurveTo(qx, qy, ex, ey);          // cahaya lembut di bawah pita: tiga lapis, makin lebar makin tipis
+    gx.strokeStyle = grad(d.cg);
+    for (const [w, al] of [[22, .045], [13, .07], [6, .1]]) { gx.globalAlpha = env * al * (gLight ? 1.1 : 1); gx.lineWidth = w; gx.stroke(); }
+    gx.strokeStyle = grad(d.cs);
+    const NR = 30;
+    for (const [ph, w, al] of [[0, 2.6, .9], [Math.PI * .9, 2, .7]]) {                // dua pita saling melilit
+      gx.beginPath(); gx.moveTo(sx, sy);
+      for (let i = 1; i <= NR; i++) { const t = i / NR, q = pt(t, wave(t, ph)); gx.lineTo(q.x, q.y); }
+      gx.globalAlpha = env * al; gx.lineWidth = w; gx.stroke();
     }
-    for (const ph of [0, Math.PI * .9]) {                      // dua pita saling melilit, ujungnya meruncing
-      let prev = pt(0, 0);
-      for (let i = 1; i <= N; i++) {
-        const t = i / N, q = pt(t, wave(t, ph)), tm = Math.sin(t * Math.PI);
-        gx.strokeStyle = hc(hue(t), tone, (env * (.25 + .7 * tm)).toFixed(3)); gx.lineWidth = .8 + tm * 2.8;
-        gx.beginPath(); gx.moveTo(prev.x, prev.y); gx.lineTo(q.x, q.y); gx.stroke();
-        prev = q;
-      }
-    }
-    for (let j = 0; j < 3; j++) {                              // nada mengalir bolak-balik
+    for (let j = 0; j < 2; j++) {                              // nada mengalir bolak-balik, pelan
       for (const dir of [1, -1]) {
-        let t = (age * (dir > 0 ? .34 : .29) + j / 3 + (dir > 0 ? 0 : .17)) % 1; if (dir < 0) t = 1 - t;
+        let t = (age * (dir > 0 ? .21 : .18) + j / 2 + (dir > 0 ? 0 : .17)) % 1; if (dir < 0) t = 1 - t;
         const f = Math.sin(t * Math.PI), q = pt(t, wave(t, dir > 0 ? 0 : Math.PI * .9) + (dir > 0 ? -9 : 9) * f), h = hue(t);
         const al = env * Math.min(1, f * 2.2), sz = 5.2 + f * 1.6;
         gx.globalAlpha = al * (gLight ? .09 : .22); gx.fillStyle = hc(h, tone + 14); gx.beginPath(); gx.arc(q.x, q.y - sz, sz * 2.1, 0, 6.2832); gx.fill();
         gx.globalAlpha = al; gx.fillStyle = hc(h, tone); gx.strokeStyle = hc(h, tone);
-        drawNote(gx, q.x - sz * .3, q.y + sz * 1.1, sz, (j + (dir > 0 ? 0 : 1)) % 2, Math.sin(age * 2.4 + j * 2 + dir) * .22);
+        drawNote(gx, q.x - sz * .3, q.y + sz * 1.1, sz, (j + (dir > 0 ? 0 : 1)) % 2, Math.sin(age * 1.5 + j * 2 + dir) * .2);
       }
     }
     if (d.mid !== false) {                                                         // not besar mengambang di tengah (hanya untuk duet berdua)
-      const mid = pt(.5, wave(.5, 0) * .4), bob = Math.sin(age * 3.4) * 2.2;
+      const mid = pt(.5, wave(.5, 0) * .4), bob = Math.sin(age * 2.1) * 2;
       gx.globalAlpha = env * (gLight ? .09 : .22); gx.fillStyle = hc(hue(.5), tone + 14); gx.beginPath(); gx.arc(mid.x, mid.y - 8, 17, 0, 6.2832); gx.fill();
       gx.globalAlpha = env; gx.fillStyle = hc(hue(.5), tone); gx.strokeStyle = hc(hue(.5), tone);
-      drawNote(gx, mid.x - 3, mid.y + 6 + bob, 8.5, 1, Math.sin(age * 1.8) * .12);
+      drawNote(gx, mid.x - 3, mid.y + 6 + bob, 8.5, 1, Math.sin(age * 1.2) * .1);
     }
     gx.globalAlpha = 1;
-    if (age - d.lastB > .9) { d.lastB = age; burst(ka); burst(kb); }
+    pulse(ka, now); pulse(kb, now);
   }
   function gLoop(now) {
+    cFresh = now - cReadT > 60; if (cFresh) { cReadT = now; cId++; }
+    for (const m of cMemo.values()) { m.x += (m.tx - m.x) * .45; m.y += (m.ty - m.y) * .45; }
+    cOn = true;
+    try { gFrame(now); } finally { cOn = false; }
+  }
+  function gFrame(now) {
     const dt = Math.max(0, Math.min(.05, (now - gPrev) / 1000)); gPrev = now;
     gx.setTransform(gD, 0, 0, gD, 0, 0);
     gx.clearRect(0, 0, window.innerWidth, window.innerHeight);
@@ -2246,21 +2376,15 @@
         d.mid = true; drawDuet(d, ms[0].k, ms[1].k, age, now);
         continue;
       }
-      let cx = 0, cy = 0;                                      // pusat lingkaran kursi (bukan pusat anggota) supaya pita melengkung di sisi luar, tidak menimpa pemutar
-      const all = seatEls.map((_, i) => center(i));
-      for (const q of all) { cx += q.x / all.length; cy += q.y / all.length; }
-      const rs = all.reduce((t, q) => t + Math.hypot(q.x - cx, q.y - cy), 0) / all.length;
-      for (let i = 0; i < ms.length; i++) {                    // lingkaran pita: tiap anggota tersambung ke tetangganya
-        const u = ms[i], v = ms[(i + 1) % ms.length], ek = u.id < v.id ? u.id + '>' + v.id : v.id + '>' + u.id;
+      const kOf = new Map(ms.map((m) => [m.id, m.k]));
+      for (const pr of g.pairs) {                              // trio / kuartet: pita lurus hanya di antara pasangan yang benar-benar berduet (tidak menutup lingkaran lewat tengah lobby)
+        const ek = pr.a < pr.b ? pr.a + '>' + pr.b : pr.b + '>' + pr.a, ka = kOf.get(pr.a), kb = kOf.get(pr.b);
+        if (ka == null || kb == null || used.has(ek)) continue;
         let e = edgeD.get(ek); if (!e) { e = { lastB: 0, mid: false, bow: 1, dur: 0 }; edgeD.set(ek, e); }
         used.add(ek);
-        const A = center(u.k), B = center(v.k), nx = -(B.y - A.y), ny = B.x - A.x;
-        const mx = (A.x + B.x) / 2 - cx, my = (A.y + B.y) / 2 - cy, chord = Math.hypot(nx, ny) || 1;
-        e.bow = mx * nx + my * ny >= 0 ? 1 : -1;                                              // lengkung ke arah luar
-        e.bowAbs = e.bow * Math.max(chord * .1, rs - Math.hypot(mx, my));                      // puncaknya tepat di lingkaran kursi
-        const age = Math.max(0, (now - Math.max(g.join.get(u.id) || 0, g.join.get(v.id) || 0)) / 1000);
+        const age = Math.max(0, (now - Math.max(g.join.get(pr.a) || 0, g.join.get(pr.b) || 0)) / 1000);
         e.dur = age + Math.max(0, (g.end - now) / 1000);
-        drawDuet(e, u.k, v.k, age, now);
+        drawDuet(e, ka, kb, age, now);
       }
     }
     for (const k of [...edgeD.keys()]) if (!used.has(k)) edgeD.delete(k);
@@ -2276,7 +2400,7 @@
         gx.fillStyle = gr; gx.beginPath(); gx.arc(q.x, q.y, r, 0, 6.2832); gx.fill();
       } else if (q.k === 'ring') {
         const r = 6 + q.r * (1 - Math.pow(1 - p, 3));
-        gx.strokeStyle = hc(q.h, 75, ((1 - p) * .9).toFixed(3)); gx.lineWidth = 1.5 + (1 - p) * 5;
+        gx.strokeStyle = hc(q.h, 75, ((1 - p) * (q.a || .9)).toFixed(3)); gx.lineWidth = 1.5 + (1 - p) * (q.w || 5);
         gx.beginPath(); gx.arc(q.x, q.y, r, 0, 6.2832); gx.stroke();
       } else {
         const drag = Math.pow(.04, dt); q.vx *= drag; q.vy = q.vy * drag + 260 * dt;   // melambat + sedikit jatuh
@@ -2291,7 +2415,7 @@
     }
     gx.globalCompositeOperation = 'source-over';
     if (shots.length || parts.length || duets.length || duetOn) gRaf = requestAnimationFrame(gLoop);
-    else { gRaf = 0; gx.clearRect(0, 0, window.innerWidth, window.innerHeight); }
+    else { gRaf = 0; cMemo.clear(); gx.clearRect(0, 0, window.innerWidth, window.innerHeight); }
   }
 
   /* ---------- mulai ---------- */
