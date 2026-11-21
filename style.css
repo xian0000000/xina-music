@@ -918,3 +918,21 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
     border-left: 1.5px solid hsl(var(--h, 200) 60% 58%); border-top: 1.5px solid hsl(var(--h, 200) 60% 58%);
   }
 }
+
+/* ---- unduh dari YouTube (di panel daftar lagu) ---- */
+.yt { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.yt summary { cursor: pointer; color: var(--mute); font-size: 12px; font-weight: 500; list-style: none; user-select: none; }
+.yt summary::-webkit-details-marker { display: none; }
+.yt summary::before { content: '+ '; }
+.yt[open] summary::before { content: '\2212  '; }
+.yt[open] summary { margin-bottom: 10px; }
+.yt .sm-l { margin-top: 10px; }
+.yt input { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); color: var(--ink); font: inherit; font-size: 16px; outline: none; }
+.yt input:focus { border-color: var(--ink); }
+.yt .sm-act button:disabled { opacity: .5; cursor: default; }
+.yt-log { white-space: pre-wrap; word-break: break-word; }
+.yt-log.bad { color: #c0262d; }
+.yt-log.ok { color: #0a7d2c; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .yt-log.bad { color: #ff6b6b; } :root:not([data-theme="light"]) .yt-log.ok { color: #4cd27a; } }
+:root[data-theme="dark"] .yt-log.bad { color: #ff6b6b; }
+:root[data-theme="dark"] .yt-log.ok { color: #4cd27a; }

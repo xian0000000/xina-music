@@ -194,6 +194,15 @@
     <div class="sp-empty" id="spEmpty" hidden>Belum ada lagu. Tambah lagu pertamamu.</div>
     <div class="sm-act"><button type="button" class="sm-save" id="spAdd">+ Tambah lagu</button></div>
     <div class="sm-hint" id="spHint"></div>
+    <details class="yt" id="ytBox">
+      <summary>Unduh dari YouTube</summary>
+      <label class="sm-l" for="ytProxy">URL Worker</label>
+      <input id="ytProxy" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://nama-worker.subdomain.workers.dev">
+      <label class="sm-l" for="ytUrl">Link video YouTube</label>
+      <input id="ytUrl" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://www.youtube.com/watch?v=...">
+      <div class="sm-act"><button type="button" class="sm-save" id="ytGo">Unduh &amp; bagikan</button></div>
+      <div class="sm-hint yt-log" id="ytLog" role="status" aria-live="polite">Lagu diunduh sebagai MP3, dikompres, lalu langsung dibagikan ke lobby seperti upload biasa.</div>
+    </details>
   </div>
 </div>
 

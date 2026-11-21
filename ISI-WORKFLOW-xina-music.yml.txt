@@ -27,9 +27,11 @@ jobs:
       - name: Buat config.js dari secret
         env:
           FIREBASE_CONFIGS: ${{ secrets.FIREBASE_CONFIGS }}
+          YT_WORKER: ${{ secrets.YT_WORKER || vars.YT_WORKER }}
         run: |
           test -n "$FIREBASE_CONFIGS" || { echo "Secret FIREBASE_CONFIGS belum diisi"; exit 1; }
           printf 'window.FIREBASE_CONFIGS = %s;\n' "$FIREBASE_CONFIGS" > config.js
+          printf 'window.YT_WORKER = "%s";\n' "${YT_WORKER//\"/}" >> config.js
 
       - name: Siapkan folder publik
         run: |

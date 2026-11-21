@@ -77,7 +77,8 @@
     return Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
   };
   const cleanName = (n) => n.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim() || 'Tanpa judul';
-  const toast = () => {};                                    // notifikasi pop-up dimatikan (menutupi layar)
+  const yt = { busy: false, say: null };                       // status unduhan YouTube (diisi di bagian bawah)
+  const toast = (m) => { if (yt.busy && yt.say && m) yt.say(m); };   // pop-up tetap dimatikan (menutupi layar); pesan hanya tampil di status unduhan YouTube
 
   // angka menghitung naik/turun dengan ease-out (seperti count-up di web cuaca)
   function tween(node, to, dec, suf, dur) {
@@ -131,7 +132,7 @@
   function addFiles(list) {
     const files = [...list].filter((f) => f.type.startsWith('audio/') || /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|webm)$/i.test(f.name));
     if (!files.length) { toast('Tidak ada file audio yang dipilih'); return; }
-    if (shd()) { uploadShared(files); return; }          // mode lobby: lagu dibagikan ke semua orang
+    if (shd()) return uploadShared(files);               // mode lobby: lagu dibagikan ke semua orang
     const wasEmpty = state.tracks.length === 0;
     for (const f of files) {
       const t = { id: uid(), name: cleanName(f.name), url: URL.createObjectURL(f), dur: 0 };
@@ -1322,8 +1323,9 @@
 
   let uploading = false;
   async function uploadShared(files) {
-    if (uploading) { toast('Masih mengunggah, tunggu sebentar'); return; }
+    if (uploading) { toast('Masih mengunggah, tunggu sebentar'); return 0; }
     uploading = true;
+    let okCount = 0;
     const { db, rdb } = fb;
     try {
       for (const f of files) {
@@ -1346,6 +1348,7 @@
         idbPut(sid, up);
         shared.blobs.set(sid, URL.createObjectURL(up));              // pengunggah tidak perlu mengunduh lagi
         await db.set(db.ref(rdb, 'lobby/songs/' + sid), { name: cleanName(f.name), type: up.type || 'audio/mpeg', size: up.size, n, by: me.name, at: db.serverTimestamp() });
+        okCount++;
         toast(cleanName(f.name) + ' dibagikan ke lobby');
         const pb = shared.pb;
         if (!pb || !pb.sid || !state.tracks.some((t) => t.id === pb.sid)) pbWrite({ sid, playing: true, pos: 0 });
@@ -1355,6 +1358,7 @@
       console.warn(e); toast('Gagal mengunggah lagu');
     }
     uploading = false;
+    return okCount;
   }
   function trimOld(keepSid) {
     const L = state.tracks;
@@ -1366,6 +1370,64 @@
       fb.db.remove(fb.db.ref(fb.rdb, 'lobby/chunks/' + t.id)).catch(() => {});
     }
   }
+
+  /* ---- unduh dari YouTube lewat Worker, lalu langsung masuk alur upload yang sama (kompres -> Firebase) ---- */
+  const ytEl = { proxy: $('#ytProxy'), url: $('#ytUrl'), go: $('#ytGo'), log: $('#ytLog') };
+  const YT_FIXED = String(window.YT_WORKER || '').trim();       // dari config.js (secret YT_WORKER); kalau ada, kolom input disembunyikan
+  ytEl.proxy.value = YT_FIXED || store.get('yt.proxy', store.get('proxy', ''));
+  if (YT_FIXED) { ytEl.proxy.hidden = true; const l = document.querySelector('label[for="ytProxy"]'); if (l) l.hidden = true; }
+  yt.say = (m, c) => { ytEl.log.textContent = m; ytEl.log.className = 'sm-hint yt-log' + (c ? ' ' + c : ''); };
+  function ytProxy() {
+    let p = ytEl.proxy.value.trim();
+    if (!p) throw new Error('Isi URL Worker dulu');
+    if (!/^https?:\/\//i.test(p)) p = 'https://' + p;
+    p = p.replace(/[?#].*$/, '').replace(/\/+$/, '');
+    if (!YT_FIXED) store.set('yt.proxy', p);
+    return p;
+  }
+  async function ytRun() {
+    if (yt.busy) return;
+    yt.busy = true; ytEl.go.disabled = true;
+    let p, v, title = '', dlUrl = '';
+    try {
+      p = ytProxy();
+      v = ytEl.url.value.trim();
+      if (!v) throw new Error('Isi link YouTube dulu');
+      yt.say('Convert di y2mate.gs…');
+      const r = await fetch(p + '/convert?' + new URLSearchParams({ v, f: 'mp3' }));
+      const j = await r.json().catch(() => null);
+      if (!j || !j.ok) throw new Error((j && j.error) || 'status ' + r.status);
+      title = String(j.title || 'Tanpa judul');
+      dlUrl = p + '/dl?' + new URLSearchParams({ u: j.downloadURL, name: title, ext: 'mp3' });
+      yt.say('Mengunduh "' + title + '"…');
+      let blob;
+      try {
+        const d = await fetch(dlUrl);
+        if (!d.ok) { const ej = await d.json().catch(() => null); throw new Error((ej && ej.error) || 'status ' + d.status); }
+        blob = await d.blob();
+      } catch (e) {
+        if (e instanceof TypeError) {                          // biasanya CORS: Worker belum mengizinkan baca /dl dari halaman ini
+          const a = document.createElement('a'); a.href = dlUrl; document.body.append(a); a.click(); a.remove();
+          throw new Error('File diunduh ke folder download, tapi tidak bisa diteruskan otomatis (Worker /dl belum mengizinkan CORS). Pilih file itu lewat "+ Tambah lagu".');
+        }
+        throw e;
+      }
+      if (!blob.size) throw new Error('File kosong dari Worker');
+      const safe = title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Tanpa judul';
+      const file = new File([blob], safe + '.mp3', { type: 'audio/mpeg' });
+      yt.say('Memproses…');
+      const res = addFiles([file]);                            // sama persis dengan memilih file: kompres, unggah, bagikan
+      const n = res && res.then ? await res : -1;              // -1 = mode lokal (tanpa lobby), lagu ditambahkan ke daftar perangkat
+      if (n === 0) throw new Error('Gagal membagikan lagu ke lobby');
+      yt.say(n === -1 ? '"' + title + '" ditambahkan ke daftar lagu.' : '"' + title + '" dibagikan ke lobby.', 'ok');
+      ytEl.url.value = '';
+    } catch (e) {
+      yt.say('ERROR: ' + e.message, 'bad');
+    }
+    yt.busy = false; ytEl.go.disabled = false;
+  }
+  ytEl.go.addEventListener('click', ytRun);
+  ytEl.url.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ytRun(); } });
 
   async function initFirebase() {
     let start = 0;
