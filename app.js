@@ -114,7 +114,11 @@
     const r = el.theme.getBoundingClientRect();
     root.style.setProperty('--tx', (r.left + r.width / 2) + 'px');
     root.style.setProperty('--ty', (r.top + r.height / 2) + 'px');
-    document.startViewTransition(apply);
+    root.classList.add('theming');                                   // matikan semua transisi warna selama lingkaran membuka: halaman baru dirender langsung, transisi ganda = berat
+    window.__theming = true;
+    const vt = document.startViewTransition(apply);
+    const done = () => { root.classList.remove('theming'); window.__theming = false; };
+    vt.finished.then(done, done);
   });
   try {
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { themeLabel(); });
@@ -394,7 +398,7 @@
   }
   const askParallax = () => { if (!pxRaf) pxRaf = requestAnimationFrame(applyParallax); };
   el.stage.addEventListener('pointermove', (e) => {
-    if (e.pointerType === 'touch') return;
+    if (e.pointerType === 'touch' || ship.vis) return;     // dunia kapal terlihat: kursi menempel di dek, tidak bergeser sendiri
     const r = el.stage.getBoundingClientRect();
     pxT = (e.clientX - r.left) / r.width - 0.5;
     pyT = (e.clientY - r.top) / r.height - 0.5;
@@ -461,16 +465,29 @@
     burst(0);                                                  // kursimu selalu yang pertama
     if (fb) { if (window.fbTap) window.fbTap(); } else { try { if (bc) bc.postMessage({ type: 'tap', id: me.id }); } catch (err) { /* abaikan */ } }
   };
-  const stopHold = () => { clearInterval(holdTimer); holdTimer = null; };
+  let tapPend = null;
+  const stopHold = () => { clearInterval(holdTimer); holdTimer = null; clearTimeout(tapPend); tapPend = null; };
   el.stage.addEventListener('pointerdown', (e) => {
+    if (camPtr.size >= 2) return;                                 // dua jari = cubit untuk zoom, bukan gelombang
     if (e.target.closest('.knob, input[type="range"]')) return;   // geser volume / posisi lagu tidak memicu gelombang
     const sRoot = e.target.closest('.seat'), sk = sRoot ? seatEls.findIndex((x) => x.root === sRoot) : -1;
     if (sk > 0 && seatEls[sk].id) { openGiftMenu(sk); return; }    // ketuk avatar orang lain: pilih hadiah (bukan gelombang)
+    if (ship.open && camSurface(e.target)) {
+      // laut / dek kosong bisa jadi awal geseran kamera: gelombang (membuat elemen, animasi, kirim ke server) TIDAK dikerjakan sekarang supaya geseran pertama tidak tersendat.
+      // Ketukan singkat memicu gelombang saat jari diangkat; ditahan sebentar = gelombang berulang; kalau berubah jadi geseran, tidak ada gelombang sama sekali.
+      clearTimeout(tapPend);
+      tapPend = setTimeout(() => { tapPend = null; if (camPan || camPtr.size >= 2) return; tapEmit(); clearInterval(holdTimer); holdTimer = setInterval(tapEmit, 380); }, 170);
+      return;
+    }
     tapEmit();
     clearInterval(holdTimer);
     holdTimer = setInterval(tapEmit, 380);
   });
-  ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => el.stage.addEventListener(ev, stopHold));
+  el.stage.addEventListener('pointerup', () => {
+    if (tapPend && !camPan) { clearTimeout(tapPend); tapPend = null; tapEmit(); }      // ketukan singkat: satu gelombang
+    stopHold();
+  });
+  ['pointercancel', 'pointerleave'].forEach((ev) => el.stage.addEventListener(ev, stopHold));
   window.addEventListener('blur', stopHold);
 
   /* ---------- jam besar: waktu asli saat diam, ngebut kayak time traveler saat lagu diputar ---------- */
@@ -518,15 +535,20 @@
         const AC = window.AudioContext || window.webkitAudioContext;
         if (!AC) return;
         tctx = new AC();
+        const c0 = tctx;
+        // isi buffer noise + unduh tick.wav ditunda sebentar: dikerjakan di ketukan pertama, ini memakan puluhan ms di HP dan terasa sebagai tersendat saat mulai menggeser
+        setTimeout(() => {
+        if (tctx !== c0) return;
         tnoise = tctx.createBuffer(1, Math.floor(tctx.sampleRate * 0.05), tctx.sampleRate);
         const d = tnoise.getChannelData(0);
         for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
         fetch('tick.wav').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject())).then((b) => tctx.decodeAudioData(b)).then((buf) => { tbuf = buf; }).catch(() => { /* tidak ada tick.wav: pakai suara sintetis */ });
+        }, 400);
       }
       if (tctx.state === 'suspended') tctx.resume();
     } catch (e) { tctx = null; }
   }
-  ['pointerdown', 'keydown', 'touchend'].forEach((ev) => window.addEventListener(ev, unlockTick, { passive: true }));
+  ['mousedown', 'keydown', 'touchend'].forEach((ev) => window.addEventListener(ev, unlockTick, { passive: true }));   // bukan pointerdown: di HP itu awal geseran, dan membuat AudioContext di saat itu terasa tersendat
   function tickSound(ctx, dest, noise, t, tock, peak) {
     // klik: noise pendek dibentuk band-pass (tik lebih tinggi dari tok)
     const src = ctx.createBufferSource(); src.buffer = noise;
@@ -542,7 +564,7 @@
     o.connect(og); og.connect(dest); o.start(t); o.stop(t + 0.06);
   }
   function playTick(soft) {
-    if (!tctx || tctx.state !== 'running') return;
+    if (!tctx || tctx.state !== 'running' || (!tnoise && !tbuf)) return;     // buffer noise baru siap sekejap setelah AudioContext dibuat
     const vol = Math.min(1, state.vol);
     if (vol <= 0) return;
     if (tbuf) {                                                 // suara dari file: diputar tiap detik, dipotong maksimal 1 detik supaya tidak bertumpuk
@@ -1802,9 +1824,44 @@
     }
   }
   function stopTyping() { sendTyping(false); }
+  // panel chat ala Roblox (mode kapal): semua pesan dicatat di sini, juga yang masuk sebelum kapal dibuka
+  const clog = $('#chatlog'), clist = $('#clogList'), cform = $('#clogForm'), cin = $('#clogIn');
+  const CLOG_MAX = 40, CLOG_SHOW = 6, CLOG_IDLE = 9000;               // simpan 40 pesan; yang tampak sekaligus 4, sisanya di-scroll; panel menghilang kalau sepi
+  let clogT = 0, clogAway = 0;
+  function clogFit() {                                                // tinggi daftar = persis 4 pesan terakhir (pesan panjang yang membungkus tetap dihitung utuh)
+    const k = clist.children, n = k.length;
+    if (!n) { clist.style.maxHeight = ''; return; }
+    const first = k[Math.max(0, n - CLOG_SHOW)], last = k[n - 1];
+    clist.style.maxHeight = (last.offsetTop + last.offsetHeight - first.offsetTop + 14) + 'px';
+  }
+  function chatClose() { clog.classList.add('closed'); clog.classList.remove('away'); clearTimeout(clogAway); if (cin) cin.blur(); }       // ketuk panel: tutup, tinggal tombol kecil
+  function chatOpen() { if (!clog.classList.contains('closed')) return; clog.classList.remove('closed', 'unread'); clogFit(); clist.scrollTop = clist.scrollHeight; chatWake(); }
+  function chatWake() {                                               // munculkan panel; hilang lagi kalau CLOG_IDLE tanpa pesan / ketikan / sentuhan
+    if (!clog || clog.classList.contains('closed')) return;
+    clog.classList.remove('away');
+    clearTimeout(clogAway);
+    clogAway = setTimeout(function idle() {
+      if (document.activeElement === cin || clog.matches(':hover')) { clogAway = setTimeout(idle, 2000); return; }
+      clog.classList.add('away');
+    }, CLOG_IDLE);
+  }
+  function logChat(name, hue, text, self) {
+    if (!clist) return;
+    const stick = clist.scrollTop + clist.clientHeight >= clist.scrollHeight - 24;
+    const li = document.createElement('div'); li.className = 'cl-line' + (self ? ' self' : '');
+    const n = document.createElement('b'); n.textContent = name + ':'; n.style.color = 'hsl(' + (Number(hue) || 200) + ' 85% 74%)';
+    const t = document.createElement('span'); t.textContent = ' ' + text; setLang(t, text);      // textContent: pesan orang lain tidak pernah dianggap HTML
+    li.append(n, t); clist.append(li);
+    while (clist.children.length > CLOG_MAX) clist.firstChild.remove();
+    if (clog.classList.contains('closed')) clog.classList.add('unread');      // ditutup manual: jangan muncul sendiri, cukup titik merah
+    else { clogFit(); chatWake(); }
+    if (stick) clist.scrollTop = clist.scrollHeight;
+    clog.classList.add('hot'); clearTimeout(clogT); clogT = setTimeout(() => clog.classList.remove('hot'), 6000);
+  }
   function chatFrom(id, raw) {
     const text = cut(String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim(), CHAT_MAX);
     if (!text) return;
+    { const pp = peers.get(String(id)); logChat(pp ? pp.name : 'Seseorang', pp ? pp.hue : 200, text, false); }
     typingFrom(id, '');
     const k = seatEls.findIndex((s) => s.id === String(id));
     if (k > 0 && showBubble(k, text)) return;
@@ -1817,18 +1874,34 @@
     if (!text || t - chatLastSend < 800) return false;       // jeda antar pesan supaya tidak spam
     chatLastSend = t;
     stopTyping();
+    logChat(me.name, me.hue, text, true);
     showBubble(0, text);
     if (fb) fb.update(fb.meRef, { chat: text, chatAt: Date.now() + srvOff }).catch(() => {});
     else if (bc) { try { bc.postMessage({ type: 'chat', id: me.id, text }); } catch (err) { /* abaikan */ } }
     return true;
   }
-  function openChat() { chatBar.classList.add('open'); chatIn.focus(); }
+  const shipChat = () => !document.body.classList.contains('ship-locked') && !!cin;     // mode kapal: pakai panel kiri atas, bukan kolom ketik di bawah
+  function openChat() {
+    if (shipChat()) { chatOpen(); chatWake(); cin.focus(); return; }
+    chatBar.classList.add('open'); chatIn.focus();
+  }
   function closeChat() { stopTyping(); chatBar.classList.remove('open'); chatIn.blur(); }
   chatBar.addEventListener('submit', (e) => { e.preventDefault(); if (sendChat(chatIn.value)) chatIn.value = ''; closeChat(); });
   chatIn.addEventListener('input', () => sendTyping(!!chatIn.value.trim()));   // langsung muncul saat mulai mengetik, hilang saat kolom dikosongkan
   chatIn.addEventListener('keydown', (e) => { if (e.key === 'Escape') { chatIn.value = ''; closeChat(); } });
   chatIn.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== chatIn) { stopTyping(); chatBar.classList.remove('open'); } }, 120));
-  $('#chatBtn').addEventListener('click', () => { if (chatBar.classList.contains('open')) closeChat(); else openChat(); });
+  if (cin && matchMedia('(pointer: coarse)').matches) cin.placeholder = 'Ketuk untuk chat…';       // HP: tidak ada tombol /, placeholder dipendekkan supaya tidak terpotong
+  if (cform) {
+    cform.addEventListener('submit', (e) => { e.preventDefault(); if (sendChat(cin.value)) { cin.value = ''; cin.blur(); } });
+    cin.addEventListener('input', () => { sendTyping(!!cin.value.trim()); chatWake(); });
+    cin.addEventListener('focus', chatWake);
+    clist.addEventListener('click', () => { if (!String(window.getSelection && window.getSelection()).length) chatClose(); });   // ketuk panel pesan = tutup (kalau tidak sedang memilih teks)
+    $('#clogMini').addEventListener('click', () => chatOpen());
+    window.addEventListener('resize', clogFit);
+    cin.addEventListener('keydown', (e) => { if (e.key === 'Escape') { cin.value = ''; cin.blur(); } });
+    cin.addEventListener('blur', () => stopTyping());
+  }
+  $('#chatBtn').addEventListener('click', () => { if (shipChat()) { if (clog.classList.contains('closed')) { chatOpen(); cin.focus(); } else if (document.activeElement === cin) cin.blur(); else { chatWake(); cin.focus(); } } else if (chatBar.classList.contains('open')) closeChat(); else openChat(); });
   if (window.visualViewport) {                              // di HP kolom ketik naik di atas keyboard
     const vv = window.visualViewport;
     const fit = () => chatBar.style.setProperty('--kb', Math.max(0, window.innerHeight - vv.height - vv.offsetTop) + 'px');
@@ -2650,4 +2723,650 @@
   updateNetClass();
   connectLobby();
   setTimeout(() => { if (!fb) loadLibrary(); }, netUp() ? 2500 : 0);     // belum tersambung (offline / server lambat): tampilkan lagu yang tersimpan di perangkat
+
+  /* ---------- dunia kapal: laut + kapal + layar + camar di BELAKANG lobby ----------
+     Jam, kursi, dan pemutar (isi .stage) duduk di tengah dek: begitu dunia kapal terbuka, seluruh lobby mengecil mulus sampai muat di dalam dek
+     (tidak ada yang keluar dari lambung), dan ikut zoom / geser kamera bersama kapal. Saat kapal tertutup, lobby kembali ukuran penuh seperti biasa. */
+  const SHIP_UNLOCK_S = 60;      // detik ke-berapa kapal terbuka (tiap lagu)
+  const SHIP_CLOSE_LEAD = 6;     // kapal menutup lagi saat sisa lagu tinggal sekian detik
+  const DECK_R = 0.235;          // jari-jari lobby di atas dek, dalam sisi terpendek layar (dek kosong muat sampai ±0,259)
+  const ship = { open: false, vis: false, mix: 0, clip: null };   // open = terbuka penuh (kamera aktif); vis = ada bagian dunia kapal yang terlihat; mix 0..1 = seberapa kecil lobby di dek
+  /* kamera: `cam` = posisi yang sedang digambar (dibaca laut WebGL, camar, dan dunia kapal), `tgt` = tujuan. cam.x / cam.y = posisi pusat dek relatif ke pusat layar.
+     Posisi diam (zoom 1, tanpa geseran) = `off`: pusat panggung (tengah jam) yang sedikit di bawah header. Satu loop (camTick) menyusulkan `cam` ke `tgt` dengan peredaman
+     yang tidak bergantung frame rate; seret dan cubit mengikuti jari 1:1. Dunia kapal dan lobby ditulis SEKALI per frame, jadi tidak pernah selisih. */
+  const bdrop = $('#backdrop'), world = $('#world'), appEl = document.querySelector('.app');
+  const cam = { z: 1, x: 0, y: 0 }, tgt = { z: 1, x: 0, y: 0 }, CAM_MIN = 0.4, CAM_MAX = 3.2;
+  const off = { x: 0, y: 0 };
+  let fit = 1;                                                       // skala lobby supaya muat di dek (<= 1)
+  const camPtr = new Map();
+  let camAnim = null, camPan = false, camPinch = null, camBusy = false, camDirty = true, camLast = performance.now();
+  let camT = .14;                                                    // waktu peredam pegas (detik): makin kecil makin gesit
+  let camAnchor = null;                                              // titik dunia yang dijaga tetap di bawah kursor / jari saat zoom: { sx, sy, wx, wy }
+  let camFling = null;                                               // luncuran setelah jari dilepas: { vx, vy } (px / detik)
+  const camV = { z: 0, x: 0, y: 0 };                                 // kecepatan pegas: ln(zoom) / detik, px / detik
+  const camHist = [];                                                // jejak jari terakhir untuk menghitung kecepatan luncur
+  let camLive = false, camActiveAt = 0, camReliveAt = 0, camZ0 = 1;   // layer GPU kamera: dipasang selama dunia kapal terlihat, dirombak sekali tiap zoom selesai supaya tajam
+  const setLive = (on) => { if (camLive === on) return; camLive = on; document.body.classList.toggle('cam-live', on); if (on) camZ0 = cam.z; };
+  let camRect = { w: 1, h: 1, u: 1 };
+  const camU = () => camRect;
+  function camMeasure() {
+    const bw = bdrop.clientWidth || window.innerWidth, bh = bdrop.clientHeight || window.innerHeight;
+    camRect = { w: bw, h: bh, u: Math.min(bw, bh) / 100 };
+    const b = bdrop.getBoundingClientRect(), st = el.stage, ap = st.offsetParent || document.body, ar = ap.getBoundingClientRect();
+    const cx = ar.left + st.offsetLeft + st.offsetWidth / 2, cy = ar.top + st.offsetTop + st.offsetHeight / 2;   // offset* tidak terpengaruh transform: pusat panggung "diam"
+    const nx = cx - (b.left + b.width / 2), ny = cy - (b.top + b.height / 2);
+    const dx = nx - off.x, dy = ny - off.y;
+    off.x = nx; off.y = ny;
+    cam.x += dx; cam.y += dy; tgt.x += dx; tgt.y += dy;              // geseran pemakai dipertahankan saat ukuran layar berubah
+    const m = Math.min(st.offsetWidth, st.offsetHeight) || 1;        // lobby = lingkaran jari-jari 0,5 x sisi terpendek panggung (cincin angka romawi)
+    fit = Math.min(1, DECK_R * Math.min(bw, bh) / (0.5 * m));
+    camDirty = true;
+  }
+  function camClamp(o) {
+    const u = camRect.u;
+    o.z = Math.min(CAM_MAX, Math.max(CAM_MIN, o.z));
+    const mx = 48 * u * o.z, my = 88 * u * o.z;                     // batas geser: kapal (dan layarnya) tidak boleh hilang dari layar
+    o.x = off.x + Math.min(mx, Math.max(-mx, o.x - off.x)); o.y = off.y + Math.min(my, Math.max(-my, o.y - off.y));
+  }
+  function camApply() {
+    camClamp(cam);
+    if (world) world.style.transform = 'translate(' + cam.x.toFixed(2) + 'px,' + cam.y.toFixed(2) + 'px) scale(' + cam.z.toFixed(4) + ')';
+    const st = el.stage.style;
+    if (ship.mix === 0 && Math.abs(cam.z - 1) < 1e-4 && Math.abs(cam.x - off.x) < 0.05 && Math.abs(cam.y - off.y) < 0.05) { st.translate = ''; st.scale = ''; return; }   // lobby polos: tidak disentuh sama sekali
+    // lobby mengecil di tengah dek (skala `fit` x mix) dan ikut zoom / geser kamera; pusatnya selalu jatuh di pusat dek
+    st.translate = (cam.x - off.x).toFixed(2) + 'px ' + (cam.y - off.y).toFixed(2) + 'px';
+    st.scale = ((1 + (fit - 1) * ship.mix) * cam.z).toFixed(4);
+  }
+  camMeasure(); camApply();
+  if (window.ResizeObserver) new ResizeObserver(camMeasure).observe(el.stage);
+  window.addEventListener('resize', camMeasure);
+  const camSync = () => {
+    camAnim = null; camFling = null; camAnchor = null;
+    camClamp(cam); tgt.z = cam.z; tgt.x = cam.x; tgt.y = cam.y;
+    camV.z = camV.x = camV.y = 0; camBusy = false; camDirty = true;
+  };
+  // pegas teredam kritis (gaya SmoothDamp): mulai dan berhenti halus, dan kecepatannya menyambung walau tujuan berubah di tengah jalan (roda mouse berderet)
+  function damp(cur, target, key, T, dt) {
+    const w = 2 / T, x = w * dt, e = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x), ch = cur - target, tmp = (camV[key] + w * ch) * dt;
+    camV[key] = (camV[key] - w * tmp) * e;
+    return target + (ch + tmp) * e;
+  }
+  const qEase = (u) => u * u * u * (u * (u * 6 - 15) + 10);
+  function camTick(now) {
+    requestAnimationFrame(camTick);
+    const dt = Math.min(0.05, Math.max(0.001, (now - camLast) / 1000)); camLast = now;
+    let moving = false;
+    if (camAnim) {                                                   // glide: durasi tetap, ease in-out; zoom diinterpolasi di skala log supaya lajunya terasa rata
+      const a = camAnim, u = Math.min(1, Math.max(0, (now - a.t0) / a.d)), e = qEase(u);
+      cam.z = Math.exp(a.l0 + (a.l1 - a.l0) * e); cam.x = a.x0 + (a.x1 - a.x0) * e; cam.y = a.y0 + (a.y1 - a.y0) * e;
+      camDirty = true; moving = true;
+      if (u >= 1) { camAnim = null; tgt.z = cam.z; tgt.x = cam.x; tgt.y = cam.y; camBusy = false; }
+    } else if (camBusy) {
+      camClamp(tgt);
+      const lt = Math.log(tgt.z);
+      cam.z = Math.exp(damp(Math.log(cam.z), lt, 'z', camT, dt));
+      if (camAnchor) { cam.x = camAnchor.sx - camAnchor.wx * cam.z; cam.y = camAnchor.sy - camAnchor.wy * cam.z; }   // titik di bawah kursor menempel TEPAT di tiap frame, tidak melenceng selama zoom
+      else { cam.x = damp(cam.x, tgt.x, 'x', camT, dt); cam.y = damp(cam.y, tgt.y, 'y', camT, dt); }
+      camDirty = true; moving = true;
+      const still = Math.abs(lt - Math.log(cam.z)) < 1e-4 && Math.abs(camV.z) < 2e-3 && (camAnchor || (Math.abs(tgt.x - cam.x) < 0.05 && Math.abs(tgt.y - cam.y) < 0.05 && Math.abs(camV.x) < 1 && Math.abs(camV.y) < 1));
+      if (still) { cam.z = tgt.z; cam.x = tgt.x; cam.y = tgt.y; camV.z = camV.x = camV.y = 0; camAnchor = null; camBusy = false; }
+    } else if (camFling) {                                           // luncuran setelah dilepas: melambat eksponensial, berhenti di batas geser
+      const f = camFling, k = Math.exp(-dt * 4.6), px = cam.x, py = cam.y;
+      cam.x += f.vx * dt; cam.y += f.vy * dt; camClamp(cam);
+      if (Math.abs(cam.x - (px + f.vx * dt)) > 0.01) f.vx = 0;
+      if (Math.abs(cam.y - (py + f.vy * dt)) > 0.01) f.vy = 0;
+      f.vx *= k; f.vy *= k;
+      tgt.z = cam.z; tgt.x = cam.x; tgt.y = cam.y; camDirty = true; moving = true;
+      if (Math.hypot(f.vx, f.vy) < 10) camFling = null;
+    }
+    // layer GPU: aktif selama dunia kapal terlihat; saat zoom sudah berubah dan kamera diam sebentar, dilepas lalu dipasang lagi supaya digambar ulang tajam di ukuran akhir
+    const active = moving || camPan || camPtr.size > 0 || (ship.vis && !ship.open);
+    if (active) camActiveAt = now;
+    if (!ship.vis) { setLive(false); camReliveAt = 0; }
+    else if (camLive) {
+      if (!active && ship.open && now - camActiveAt > 600 && Math.abs(Math.log(cam.z / camZ0)) > 0.22) { setLive(false); camReliveAt = now + 110; }
+    } else if (!camReliveAt || now >= camReliveAt) { camReliveAt = 0; setLive(true); }
+    if (camDirty) { camDirty = false; camApply(); }
+  }
+  requestAnimationFrame(camTick);                                    // didaftarkan sebelum loop laut, jadi selalu jalan lebih dulu di tiap frame
+  const bCenter = () => { const r = bdrop.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+  // zoom ke z baru dengan titik (sx, sy) (px dari tengah layar) tetap di bawah jari / kursor. Titik dunia diambil dari kamera yang SEDANG digambar,
+  // lalu dijaga di tempatnya tiap frame oleh camTick (pegas di skala log), jadi zoom masuk dan keluar sama halusnya dan tidak melenceng.
+  function camZoomSmooth(nz, sx, sy, T) {
+    camAnim = null; camFling = null;
+    nz = Math.min(CAM_MAX, Math.max(CAM_MIN, nz));
+    camAnchor = { sx, sy, wx: (sx - cam.x) / cam.z, wy: (sy - cam.y) / cam.z };
+    tgt.z = nz; tgt.x = sx - camAnchor.wx * nz; tgt.y = sy - camAnchor.wy * nz;
+    camClamp(tgt);
+    camT = T || .12;
+    if (rm()) { cam.z = tgt.z; cam.x = tgt.x; cam.y = tgt.y; camAnchor = null; camV.z = camV.x = camV.y = 0; camBusy = false; camDirty = true; return; }
+    camBusy = true;
+  }
+  function camZoomNow(ratio, sx, sy) {                               // cubit: langsung mengikuti jari tanpa jeda
+    const nz = Math.min(CAM_MAX, Math.max(CAM_MIN, cam.z * ratio)), k = nz / cam.z;
+    cam.x = sx - (sx - cam.x) * k; cam.y = sy - (sy - cam.y) * k; cam.z = nz;
+    camSync();
+  }
+  function camTo(z, x, y, ms) {
+    camAnim = null; camFling = null; camAnchor = null;
+    tgt.z = z; tgt.x = x; tgt.y = y; camClamp(tgt);
+    if (rm()) { cam.z = tgt.z; cam.x = tgt.x; cam.y = tgt.y; camV.z = camV.x = camV.y = 0; camBusy = false; camDirty = true; return; }
+    camT = ms > 300 ? .2 : .15; camBusy = true;
+  }
+  const camStep = (f) => camZoomSmooth(tgt.z * f, 0, 0, .16);       // tombol + / -: zoom ke tengah layar
+  const HOME_Z = 1.4;                                                // zoom awal / tombol fokus = 1 langkah zoom-in (zoom 1 terasa kekecilan)
+  function camGlide(z, x, y, d, delay) {
+    if (rm()) { camTo(z, x, y); return; }
+    camBusy = false; camFling = null; camAnchor = null; camV.z = camV.x = camV.y = 0;
+    tgt.z = z; tgt.x = x; tgt.y = y; camClamp(tgt);
+    camAnim = { t0: performance.now() + (delay || 0), d, l0: Math.log(cam.z), l1: Math.log(tgt.z), x0: cam.x, y0: cam.y, x1: tgt.x, y1: tgt.y };
+  }
+  const camHome = () => camGlide(HOME_Z, off.x, off.y, 800, 0);            // tombol fokus: kembali ke dek di zoom awal (1 langkah zoom-in)
+  const camPlain = () => camTo(1, off.x, off.y, 420);                // kapal menutup: kembali ke ukuran lobby polos
+  const _zIn = $('#zIn'); if (_zIn) _zIn.addEventListener('click', () => { if (ship.open) camStep(1.4); });
+  const _zOut = $('#zOut'); if (_zOut) _zOut.addEventListener('click', () => { if (ship.open) camStep(1 / 1.4); });
+  const _zFit = $('#zFit'); if (_zFit) _zFit.addEventListener('click', () => { if (ship.open) camHome(); });
+
+  // permukaan yang boleh digeser / di-zoom: laut dan dek kosong. Jam, kursi, pemutar, tombol, dan panel tetap berfungsi seperti biasa.
+  const camSurface = (t) => !!t && t.nodeType === 1 && (t === document.body || t === document.documentElement || t === appEl || el.stage.contains(t))
+    && !t.closest('.turntable, .seat, .knob, button, input, textarea, select, a, label, .top, [role="dialog"]');
+  document.addEventListener('wheel', (e) => {
+    if (e.defaultPrevented || !ship.open || !camSurface(e.target)) return;
+    e.preventDefault();
+    const c = bCenter();
+    let d = e.deltaY; if (e.deltaMode === 1) d *= 16; else if (e.deltaMode === 2) d *= 100;
+    d = Math.max(-240, Math.min(240, d));                            // satu hentakan roda tidak boleh melompat jauh
+    camZoomSmooth(tgt.z * Math.exp(-d * (e.ctrlKey ? 0.01 : 0.0018)), e.clientX - c.x, e.clientY - c.y, e.ctrlKey ? .08 : .12);
+  }, { passive: false });
+  const pinchState = () => {
+    const [p, q] = [...camPtr.values()];
+    return { d: Math.hypot(p.x - q.x, p.y - q.y) || 1, mx: (p.x + q.x) / 2, my: (p.y + q.y) / 2 };
+  };
+  const PAN_SLOP = 3;                                                // px: di bawah ini dianggap ketukan (kecil supaya geseran terasa langsung, tanpa jeda)
+  document.addEventListener('pointerdown', (e) => {
+    if (!ship.open) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (!camSurface(e.target)) return;
+    camSync();                                                       // sentuhan menghentikan gerak susulan: kamera berhenti di tempat, lalu mengikuti jari
+    camPtr.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY });
+    camHist.length = 0; camHist.push({ t: e.timeStamp, x: e.clientX, y: e.clientY });
+    try { e.target.setPointerCapture(e.pointerId); } catch (err) { /* abaikan */ }
+    if (camPtr.size === 2) { camPinch = pinchState(); camPan = true; stopHold(); document.body.classList.add('panning'); }
+  });
+  document.addEventListener('pointermove', (e) => {
+    const p = camPtr.get(e.pointerId);
+    if (!p) return;
+    if (camPtr.size >= 2) {
+      p.x = e.clientX; p.y = e.clientY;
+      const n = pinchState(), c = bCenter();
+      if (camPinch) {
+        cam.x += n.mx - camPinch.mx; cam.y += n.my - camPinch.my;
+        camZoomNow(n.d / camPinch.d, n.mx - c.x, n.my - c.y);
+      }
+      camPinch = n;
+      return;
+    }
+    if (!camPan && Math.hypot(e.clientX - p.sx, e.clientY - p.sy) < PAN_SLOP) return;     // belum cukup jauh: masih dianggap ketukan
+    if (!camPan) { camPan = true; stopHold(); document.body.classList.add('panning'); }
+    cam.x += e.clientX - p.x; cam.y += e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    camHist.push({ t: e.timeStamp, x: e.clientX, y: e.clientY });
+    while (camHist.length > 2 && e.timeStamp - camHist[0].t > 100) camHist.shift();
+    camSync();                                                       // digambar sekali per frame oleh camTick
+  });
+  const camUp = (e) => {
+    if (!camPtr.delete(e.pointerId)) return;
+    const wasPan = camPan && camPtr.size === 0 && !camPinch;
+    camPinch = null;
+    if (camPtr.size === 1) { const q = [...camPtr.values()][0]; q.sx = q.x; q.sy = q.y; }    // satu jari tersisa: lanjut geser tanpa loncat
+    if (camPtr.size === 0) {
+      camPan = false; document.body.classList.remove('panning');
+      // lepas sambil masih bergerak: kamera meluncur dan melambat (inersia), bukan berhenti mendadak
+      if (wasPan && e.type === 'pointerup' && !rm() && camHist.length >= 2 && e.timeStamp - camHist[camHist.length - 1].t < 70) {
+        const a = camHist[0], b = camHist[camHist.length - 1], span = Math.max(16, b.t - a.t);
+        const vx = (b.x - a.x) / span * 1000, vy = (b.y - a.y) / span * 1000;
+        if (Math.hypot(vx, vy) > 160) camFling = { vx: Math.max(-4000, Math.min(4000, vx)), vy: Math.max(-4000, Math.min(4000, vy)) };
+      }
+      camHist.length = 0;
+    }
+  };
+  document.addEventListener('pointerup', camUp);
+  document.addEventListener('pointercancel', camUp);
+  document.addEventListener('keydown', (e) => {
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (!ship.open) return;
+    if (e.key === '+' || e.key === '=') camStep(1.4);
+    else if (e.key === '-' || e.key === '_') camStep(1 / 1.4);
+    else if (e.key === '0') camHome();
+  });
+
+  const HULLFN = `float hullHW(float s){
+  s = clamp(s, 0., 1.);
+  return s < 0.0417 ? 0.00 + (5.36 - 0.00) * (s * 24. - 0.) : (s < 0.0833 ? 5.36 + (9.76 - 5.36) * (s * 24. - 1.) : (s < 0.1250 ? 9.76 + (13.50 - 9.76) * (s * 24. - 2.) : (s < 0.1667 ? 13.50 + (16.69 - 13.50) * (s * 24. - 3.) : (s < 0.2083 ? 16.69 + (19.43 - 16.69) * (s * 24. - 4.) : (s < 0.2500 ? 19.43 + (21.77 - 19.43) * (s * 24. - 5.) : (s < 0.2917 ? 21.77 + (23.74 - 21.77) * (s * 24. - 6.) : (s < 0.3333 ? 23.74 + (25.37 - 23.74) * (s * 24. - 7.) : (s < 0.3750 ? 25.37 + (26.69 - 25.37) * (s * 24. - 8.) : (s < 0.4167 ? 26.69 + (27.70 - 26.69) * (s * 24. - 9.) : (s < 0.4583 ? 27.70 + (28.41 - 27.70) * (s * 24. - 10.) : (s < 0.5000 ? 28.41 + (28.84 - 28.41) * (s * 24. - 11.) : (s < 0.5417 ? 28.84 + (29.00 - 28.84) * (s * 24. - 12.) : (s < 0.5833 ? 29.00 + (28.93 - 29.00) * (s * 24. - 13.) : (s < 0.6250 ? 28.93 + (28.68 - 28.93) * (s * 24. - 14.) : (s < 0.6667 ? 28.68 + (28.22 - 28.68) * (s * 24. - 15.) : (s < 0.7083 ? 28.22 + (27.53 - 28.22) * (s * 24. - 16.) : (s < 0.7500 ? 27.53 + (26.55 - 27.53) * (s * 24. - 17.) : (s < 0.7917 ? 26.55 + (25.22 - 26.55) * (s * 24. - 18.) : (s < 0.8333 ? 25.22 + (23.45 - 25.22) * (s * 24. - 19.) : (s < 0.8750 ? 23.45 + (21.05 - 23.45) * (s * 24. - 20.) : (s < 0.9167 ? 21.05 + (17.70 - 21.05) * (s * 24. - 21.) : (s < 0.9583 ? 17.70 + (12.57 - 17.70) * (s * 24. - 22.) : (12.57 + (0.00 - 12.57) * (s * 24. - 23.))))))))))))))))))))))));
+}`;
+  /* ---------- laut: air procedural di GPU, bergaya peta kapal (teal marmer, urat buih tipis, buih berlapis di lambung). Semuanya bergerak terus: urat air menggeliat, riak menyapu ke buritan, buih mengalir di sisi kapal. Tidak ada gambar yang diulang. ---------- */
+  /* ---------- gerbang kapal ----------
+     Lobby polos (latar lama + jam + kursi) adalah keadaan awal. Kapal, laut, layar, dan camar tersembunyi di balik lingkaran berjari-jari 0
+     di gir tengah jam. TIAP LAGU: begitu lagu yang diputar mencapai SHIP_UNLOCK_S detik, lingkaran membesar ke segala arah (clip-path) sampai
+     menutupi layar, seperti membuka dunia baru. Saat sisa lagu tinggal SHIP_CLOSE_LEAD detik (atau lagu diganti / diulang dari awal),
+     lingkaran menyusut kembali ke gir tengah dan kapal tertutup lagi. Tanpa petunjuk atau hitung mundur: kapal terbuka tiba-tiba. */
+  (function initShipGate() {
+    const body = document.body, ring = $('#shipRing'), seaEl = $('#shipclip'), inEl = $('#shipin');   // satu pembungkus bulat untuk laut + dunia kapal sekaligus
+    const DUR = 2200;
+    const ease = (x) => (x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);      // pelan di gir, melaju, lalu mengendap
+    let p = 0, target = 0, raf = 0, lastT = 0, Rm = 0;
+    let closeFrom = null;                                                                 // kamera saat mulai menutup: zoom / posisi kembali ke dek MENGIKUTI lingkaran (satu kurva), bukan jalan sendiri
+
+    // crossfade warna jam: salinan jam dengan warna lama memudar keluar, jam asli (warna baru) memudar masuk. Gir salinan ikut berputar (didaftarkan ke `gears`).
+    const sigilEl = document.querySelector('.l-sigil');
+    let ghost = null, ghostT = 0, ghostGears = [];
+    function endGhost() {
+      clearTimeout(ghostT);
+      if (ghost) { ghost.remove(); ghost = null; }
+      for (const gg of ghostGears) { const i = gears.indexOf(gg); if (i >= 0) gears.splice(i, 1); }
+      ghostGears = [];
+      if (sigilEl) { sigilEl.classList.remove('fade-in'); sigilEl.style.animation = 'none'; }     // 'none': kalau tidak, animasi muncul awal (fade) ikut menyala lagi
+    }
+    function sigilFade(change) {
+      if (!sigilEl || rm()) { change(); return; }
+      endGhost();
+      const g = sigilEl.cloneNode(true);
+      g.classList.add('sg-ghost'); g.style.animation = ''; g.style.color = getComputedStyle(sigilEl).color;
+      const A = sigilEl.querySelectorAll('.sg-gear'), B = g.querySelectorAll('.sg-gear');
+      A.forEach((a, i) => { const o = gears.find((x) => x.el === a); if (o && B[i]) ghostGears.push({ el: B[i], k: o.k, r: o.r }); });
+      for (const gg of ghostGears) gears.push(gg);
+      sigilEl.after(g); ghost = g;
+      change();
+      sigilEl.style.animation = ''; sigilEl.classList.add('fade-in');
+      ghostT = setTimeout(endGhost, 1300);
+    }
+
+    // r = jari-jari di layar (px). Pusat lingkaran = titik tengah dek di layar (tengah panggung + geseran kamera), jadi tetap pas walau kamera tidak di posisi awal.
+    // Tidak ada clip-path / layout yang berubah per frame: pembungkus bulat berukuran tetap (2 x Rm) hanya di-translate + scale, isinya di-scale kebalikannya (lihat style.css, .reveal-on).
+    function beginReveal() {
+      const W = bdrop.clientWidth, H = bdrop.clientHeight, st = seaEl.style;
+      st.setProperty('--rd', (2 * Rm).toFixed(1) + 'px'); st.setProperty('--vw', W + 'px'); st.setProperty('--vh', H + 'px');
+      seaEl.classList.add('reveal-on');
+      if (ring) { ring.style.width = ring.style.height = (2 * Rm).toFixed(1) + 'px'; ring.hidden = false; }
+    }
+    function paint(r) {
+      const W = bdrop.clientWidth, H = bdrop.clientHeight;
+      if (closeFrom) {                                                                    // menutup: zoom + geser kamera ikut kurva lingkaran, jadi lobby mengecil lalu membesar mulus (tanpa denyut: dulu zoom turun duluan lalu lobby membesar)
+        const k = ease(p);
+        cam.z = 1 + (closeFrom.z - 1) * k; cam.x = off.x + (closeFrom.x - off.x) * k; cam.y = off.y + (closeFrom.y - off.y) * k;
+        tgt.z = cam.z; tgt.x = cam.x; tgt.y = cam.y;
+      }
+      ship.mix = ease(p); camApply();                                                     // lobby mengecil ke ukuran dek selaras dengan lingkaran yang membuka
+      const cx = W / 2 + cam.x, cy = H / 2 + cam.y, s = Math.max(r / Rm, 0.0008);
+      ship.clip = { x: cx, y: cy, r: r };                                                 // dibaca laut WebGL: hanya area di dalam lingkaran yang digambar
+      seaEl.style.transform = 'translate3d(' + (cx - Rm).toFixed(2) + 'px,' + (cy - Rm).toFixed(2) + 'px,0) scale(' + s + ')';
+      inEl.style.transformOrigin = cx.toFixed(2) + 'px ' + cy.toFixed(2) + 'px';
+      inEl.style.transform = 'translate3d(' + (Rm - cx).toFixed(2) + 'px,' + (Rm - cy).toFixed(2) + 'px,0) scale(' + (1 / s) + ')';
+      if (ring) {
+        ring.style.transform = 'translate3d(' + (cx - Rm).toFixed(2) + 'px,' + (cy - Rm).toFixed(2) + 'px,0) scale(' + s + ')';
+        ring.style.opacity = (Math.min(1, p * 8) * (1 - p * p * p)).toFixed(3);          // cincin cahaya di tepi dunia, memudar di ujung
+      }
+    }
+    function clearClips() {
+      ship.clip = null;
+      seaEl.classList.remove('reveal-on'); seaEl.style.transform = ''; inEl.style.transform = ''; inEl.style.transformOrigin = '';
+      if (ring) { ring.hidden = true; ring.style.transform = ''; }
+    }
+    function settle() {
+      raf = 0; lastT = 0;
+      if (closeFrom && p < 1) { cam.z = 1; cam.x = off.x; cam.y = off.y; tgt.z = 1; tgt.x = off.x; tgt.y = off.y; }   // menutup selesai: tepat di dek, zoom 1
+      closeFrom = null;
+      clearClips();
+      ship.mix = p >= 1 ? 1 : 0; camDirty = true;
+      if (p >= 1) { body.classList.remove('ship-locked', 'ship-opening'); ship.open = true; ship.vis = true; camGlide(HOME_Z, off.x, off.y, 1100, 450); chatWake(); }   // lingkaran selesai membuka di zoom 1, lalu otomatis zoom-in 1 langkah
+      else { body.classList.add('ship-locked'); body.classList.remove('ship-opening'); ship.open = false; ship.vis = false; }
+    }
+    function tick(now) {
+      const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 1 / 60; lastT = now;
+      const st = dt / (DUR / 1000);
+      p = target > p ? Math.min(target, p + st) : Math.max(target, p - st);
+      if (p === target) { settle(); return; }
+      paint(ease(p) * Rm);
+      raf = requestAnimationFrame(tick);
+    }
+    function go(open) {
+      const t = open ? 1 : 0;
+      if (target === t) return;
+      target = t;
+      if (open) closeFrom = null;                                                         // dibuka lagi di tengah penutupan: kamera berhenti di posisi sekarang
+      // jari-jari penuh = cukup untuk menutupi sudut layar terjauh dari pusat dek (memperhitungkan geseran kamera saat ini)
+      Rm = Math.hypot(bdrop.clientWidth, bdrop.clientHeight) / 2 + Math.hypot(cam.x, cam.y) + 48;
+      ship.open = false; ship.vis = true;
+      ship.clip = { x: bdrop.clientWidth / 2 + cam.x, y: bdrop.clientHeight / 2 + cam.y, r: open ? 0 : Math.max(0, ease(p) * Rm) };
+      setLive(true);                                                                      // lobby + dunia kapal jadi layer GPU sebelum frame pertama animasi
+      beginReveal();
+      if (open) { paint(ease(p) * Rm); sigilFade(() => body.classList.add('ship-locked', 'ship-opening')); }
+      else {
+        paint(ease(p) * Rm);                                                              // pasang klip dulu, baru kunci: tidak ada kedipan satu frame
+        sigilFade(() => { body.classList.add('ship-locked'); body.classList.remove('ship-opening'); });
+        camSync(); closeFrom = { z: cam.z, x: cam.x, y: cam.y };                          // kamera kembali ke dek (mengikuti lingkaran, lihat paint) supaya lobby polos tampil normal
+      }
+      if (rm()) { p = t; settle(); return; }                                              // "kurangi gerakan": langsung tanpa animasi
+      if (!raf) { lastT = 0; raf = requestAnimationFrame(tick); }
+    }
+    function check() {
+      const have = state.tracks.length > 0, d = audio.duration, t = audio.currentTime;
+      const rem = isFinite(d) && d > 0 ? d - t : Infinity;                                // durasi belum diketahui: anggap masih panjang
+      if (target === 0) {
+        // buka: lagu sedang berbunyi, sudah lewat batas, dan masih ada waktu cukup sebelum ditutup lagi (lagu pendek tidak membuka kapal)
+        if (have && !audio.paused && t >= SHIP_UNLOCK_S && rem > SHIP_CLOSE_LEAD + 4) go(true);
+      } else if (!have || t < SHIP_UNLOCK_S - 3 || rem <= SHIP_CLOSE_LEAD) {
+        go(false);                                                                        // lagu mau habis / diganti / diulang dari awal / dimundurkan
+      }
+    }
+    for (const ev of ['timeupdate', 'play', 'pause', 'seeked', 'loadedmetadata', 'durationchange', 'emptied', 'ended']) audio.addEventListener(ev, check);
+  })();
+
+  (function initSea() {
+    const host = $('#sea');
+    if (!host) return;
+    const cv = document.createElement('canvas');
+    const gl = cv.getContext('webgl', { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'low-power' });
+    if (!gl) return;                                                // tanpa WebGL: tetap pakai gradasi teal dari CSS
+    const VS = 'attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}';
+    const FS = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+uniform vec2 uRes, uCam; uniform float uTime, uZoom, uU, uDark, uScale;
+
+uniform sampler2D uN;                                           // tekstur derau 256x256 (dibuat sekali di CPU): 1 pembacaan menggantikan 4 hash + interpolasi
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+  return texture2D(uN, (mod(i, 256.) + f + .5) / 256.).r;
+}
+vec2 h22(vec2 p){ return texture2D(uN, (mod(p, 256.) + .5) / 256.).gb; }
+float fbm(vec2 p){ float a = .5, s = 0.; for (int i = 0; i < 3; i++) { s += a * vnoise(p); p = p * 2.03 + vec2(17.1, 9.2); a *= .5; } return s * 1.07; }
+
+// jarak ke dua titik terdekat: F2 - F1 kecil = garis retak antar sel. Titik sel mengorbit pelan, jadi urat airnya menggeliat.
+float vein(vec2 x, float t){
+  vec2 n = floor(x), f = fract(x);
+  float d1 = 8., d2 = 8.;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 g = vec2(float(i), float(j));
+    vec2 o = h22(n + g);
+    o = .5 + .42 * sin(t + 6.2831 * o);
+    vec2 r = g + o - f;
+    float d = dot(r, r);
+    if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+  }
+  return sqrt(d2) - sqrt(d1);
+}
+
+// tinggi permukaan: swell panjang yang merambat ke buritan + riak kecil (untuk kilau)
+float height(vec2 q, float t){
+  float h = 0.;
+  h += sin(dot(q, vec2(.20, .98)) * .30 - t * .90) * .50;
+  h += sin(dot(q, vec2(-.55, .83)) * .52 - t * 1.10 + 1.3) * .30;
+  h += sin(dot(q, vec2(.90, .43)) * .90 - t * 1.30 + 2.1) * .17;
+  h += (vnoise(q * .6 + vec2(t * .15, -t * .8)) - .5) * .12;
+  return h;
+}
+
+HULLFN
+
+void main(){
+  vec2 fc = gl_FragCoord.xy / uScale;
+  vec2 s = vec2(fc.x - uRes.x * .5, (uRes.y - fc.y) - uRes.y * .5);
+  vec2 p = (s - uCam) / (uZoom * uU);                            // satuan dunia (1 = 1% sisi pendek layar), +y ke bawah; laut menempel pada kapal
+  float t = uTime;
+
+  // air mengalir ke buritan (kapal melaju ke atas)
+  vec2 pf = p - vec2(0., 9.) * t;
+  vec2 warp = vec2(fbm(pf * .045 + vec2(0., t * .012)), fbm(pf * .045 + 7.3 - t * .010)) - .5;
+  vec2 q = pf + warp * 15.;
+
+  // warna dasar: teal kusam dengan bercak gelap / terang seperti marmer
+  vec3 deep  = mix(vec3(.11, .28, .33), vec3(.025, .075, .10), uDark);
+  vec3 mid   = mix(vec3(.18, .40, .45), vec3(.05, .15, .19), uDark);
+  vec3 light = mix(vec3(.28, .52, .57), vec3(.09, .24, .28), uDark);
+  vec3 vcol0 = vec3(.50, .74, .76);
+  vec3 vcol  = mix(vec3(.62, .83, .81), vec3(.20, .42, .47), uDark);
+  vec3 fcol  = mix(vec3(.94, .985, .98), vec3(.55, .72, .76), uDark);
+  float body = fbm(q * .085 + 3.1);
+  vec3 col = mix(deep, mid, smoothstep(.28, .62, body));
+  col = mix(col, light, smoothstep(.55, .85, fbm(q * .15 + 11.)) * .55);
+  col *= .93 + .14 * fbm(q * .55);                                // bintik halus
+  // riak kecil (chop) yang berlari ke buritan lebih cepat dari air dasar, seperti di rekaman referensi
+  vec2 pc = p - vec2(0., 15.) * t;
+  float chop = fbm(pc * vec2(1.7, 1.2) + vec2(40., t * .15));
+  col *= .92 + .18 * chop;
+  col = mix(col, vcol0, smoothstep(.70, .90, chop) * .16);
+
+  // urat air (retakan terang tipis), kuat-lemahnya berbeda-beda per daerah
+  float patch = smoothstep(.30, .78, fbm(q * .10 + 21.));
+  vec2 w1 = vec2(fbm(q * .26), fbm(q * .26 + 4.7)) - .5;          // lekukan: garis urat tidak lurus, bercabang seperti marmer
+  float v1 = 1. - smoothstep(0., .060, vein((q + w1 * 4.2) / 7.5, t * .30));
+  float g2 = smoothstep(.2, .8, patch + (fbm(q * .4 + 2.) - .5));      // bobot urat kedua: di banyak tempat nol, jadi urat kedua (mahal) dilewati
+  float v2 = 0.;
+  if (g2 > 0.) {
+    vec2 w2 = vec2(fbm(q * .45 + 9.), fbm(q * .45 + 13.)) - .5;
+    v2 = 1. - smoothstep(0., .075, vein((q + w2 * 1.3) / 3.3 + 5.1, t * .42 + 2.));
+  }
+  float veins = clamp(v1 * (.18 + .82 * patch) + v2 * .55 * g2, 0., 1.);
+  col = mix(col, vcol, veins * .55);
+
+  // (buih kecil / pita buih di laut lepas sengaja dihapus; buih di sekitar kapal tetap ada di bagian lambung di bawah)
+
+  // kilau matahari di lereng ombak + sisi yang menghadap cahaya lebih terang
+  float e = .35;
+  float h  = height(q, t), hx = height(q + vec2(e, 0.), t), hy = height(q + vec2(0., e), t);
+  vec3 n = normalize(vec3(-(hx - h) / e * .45, -(hy - h) / e * .45, 1.));
+  vec3 L = normalize(vec3(-.45, .55, .70));
+  col *= .92 + .16 * clamp(dot(n, L), 0., 1.);
+  float spec = pow(max(dot(n, normalize(L + vec3(0., 0., 1.))), 0.), 160.);
+  col += spec * mix(.26, .06, uDark) * vec3(1., 1., .94);
+
+  // ---- air di sekitar lambung: bayangan, lalu buih yang mengalir di sisi kapal dan melebar jadi jejak di belakang ----
+  float sh = (p.y + 67.) / 134.;                                 // 0 = haluan, 1 = buritan
+  float hw = hullHW(sh);
+  float dx = abs(p.x) - hw;
+  float dy = max(max(-67. - p.y, p.y - 67.), 0.);
+  float d = length(vec2(max(dx, 0.), dy));                       // jarak ke lambung
+  float behind = max(p.y - 67., 0.);
+
+  col *= 1. - .38 * smoothstep(9., 0., d);                       // air gelap di bawah bayangan kapal
+
+  vec2 pw = p - vec2(0., 22.) * t;                               // buih mengalir cepat di sepanjang lambung
+  float fa = fbm(pw * vec2(.60, .20));
+  float fb = fbm(pw * vec2(1.7, .75) + 7.);
+  float fl = clamp(fa * .70 + fb * .55, 0., 1.);                 // tekstur berserabut memanjang searah aliran
+  float shc = clamp(sh, 0., 1.);
+  // tepi buih bergelombang: gelombang berjalan ke buritan + lekukan acak, makin besar ke belakang
+  float edgeW = (sin((p.y - 22. * t) * .30) * .55 + sin((p.y - 22. * t) * .71 + 1.7) * .30 + (fa - .5) * 2.4) * (.5 + 1.6 * smoothstep(.1, 1., shc) + behind * .05);
+  // lebar efektif air berbuih: mengikuti lambung sampai sekitar 70% panjang, lalu bertahan dan melebar pelan ke belakang buritan.
+  // Jadi buih di sisi kapal mengalir lurus menjadi jejak, bukan mengecil mengikuti ujung buritan lalu tiba-tiba melebar.
+  float hwEff = behind > 0. ? 26.5 + behind * .10 : hullHW(min(shc, .70));
+  float dE = max(abs(p.x) - hwEff - edgeW, 0.);
+  float sidew = 3.0 + 9. * smoothstep(.10, .95, shc) + 4. * smoothstep(.36, .06, shc) + behind * .10;
+  float env = smoothstep(170., 0., behind);                      // makin jauh dari buritan makin tipis, lepas jadi bercak
+  float near = smoothstep(sidew, sidew * .05, dE) * env;
+  near *= smoothstep(0., .14, sh);                               // buih mulai dari haluan, tidak ada di depan kapal
+  float body2 = clamp(near * mix(1., .70, smoothstep(0., 30., behind)), 0., 1.);   // di belakang buritan lebih renggang: bercak buih, bukan lapisan putih rata
+  float foam = smoothstep(.30, .66, body2 * .95 + (fl - .50) * 1.5 * smoothstep(0., .18, near));   // bercak buih hanya muncul di dekat kapal; jauh dari kapal (near = 0) tidak ada bintik buih
+  foam = clamp(foam + smoothstep(2.2, 0., d) * .35, 0., 1.);     // tepi lambung hampir selalu putih
+  vec3 aqua = mix(vcol, fcol, .25);
+  vec3 fc2 = mix(aqua, fcol, smoothstep(.34, .74, fl + near * .5));
+  col = mix(col, fc2, foam * (.80 + .2 * fl));
+  // riak halus di luar buih (garis-garis pantulan buih)
+  col = mix(col, vcol, smoothstep(sidew * 1.8, sidew * .8, d) * (1. - foam) * veins * .35);
+
+  gl_FragColor = vec4(col, 1.);
+}`.replace('HULLFN', HULLFN);
+    const mk = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) console.warn(gl.getShaderInfoLog(sh)); return gl.getShaderParameter(sh, gl.COMPILE_STATUS) ? sh : null; };
+    const vs = mk(gl.VERTEX_SHADER, VS), fs = mk(gl.FRAGMENT_SHADER, FS.replace('for (int i = 0; i < 3; i++) { s += a * vnoise(p);', 'for (int i = 0; i < 2; i++) { s += a * vnoise(p);').replace('return s * 1.07;', 'return s * 1.25;'));   // fbm 2 oktaf di semua perangkat
+    if (!vs || !fs) return;
+    const pr = gl.createProgram(); gl.attachShader(pr, vs); gl.attachShader(pr, fs); gl.linkProgram(pr);
+    if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) return;
+    gl.useProgram(pr);
+    const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(pr, 'a'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const U = {}; for (const n of ['uRes', 'uCam', 'uTime', 'uZoom', 'uU', 'uDark', 'uScale', 'uN']) U[n] = gl.getUniformLocation(pr, n);
+    {                                                               // tekstur derau acak (nilai tetap, jadi laut selalu sama)
+      const N = 256, px = new Uint8Array(N * N * 4); let sd = 1337;
+      for (let i = 0; i < px.length; i++) { sd = (sd * 1664525 + 1013904223) >>> 0; px[i] = sd >>> 24; }
+      const tx = gl.createTexture(); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tx);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, N, N, 0, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+      gl.uniform1i(U.uN, 0);
+    }
+    host.append(cv);
+
+    const COARSE = true;          // HP / tablet: GPU lebih lemah dan berbagi dengan UI, anggaran piksel laut lebih kecil
+    const SEA_PX = 400000, SEA_MIN = .5, SEA_SLOW = .022;   // anggaran ~900 ribu piksel; resolusi tak pernah turun di bawah 50%
+    let seaLock = false, seaDrop = null;
+    let W = 0, H = 0, sc = 1, scMax = 1, scCap = 1;
+    function apply() {
+      const cw = Math.max(2, Math.round(W * sc)), ch = Math.max(2, Math.round(H * sc));
+      if (cw === cv.width && ch === cv.height) return;               // ukuran sama: jangan alokasi ulang kanvas (mis. bar alamat HP bergeser sedikit)
+      cv.width = cw; cv.height = ch;
+      gl.viewport(0, 0, cv.width, cv.height);
+    }
+    let sized = false, lastArea = 0;
+    function size() {
+      const r = host.getBoundingClientRect(); W = r.width; H = r.height;
+      // anggaran piksel TETAP (bukan naik sampai perangkat kehabisan tenaga), tapi sadar DPR: di HP (DPR 2-3) kanvas boleh lebih rapat dari 1 piksel CSS
+      // supaya tidak ditarik 2-3x jadi buram. Batas atas = piksel asli layar (maks 2x); sisanya diatur anggaran piksel yang sama dengan PC.
+      const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 1.5));
+      const area = Math.max(1, W * H);
+      scMax = Math.max(SEA_MIN, Math.min(dpr, Math.sqrt(SEA_PX / area)));
+      if (!sized || Math.abs(area - lastArea) / lastArea > 0.06) { sc = scMax; scCap = scMax; }   // ukuran berubah banyak (putar layar): mulai ulang
+      else { sc = Math.min(sc, scMax); scCap = Math.min(scCap, scMax); }                          // bar alamat HP bergeser sedikit: pertahankan resolusi hasil penyesuaian, jangan reset tiap geser
+      sized = true; lastArea = area;
+      apply();
+    }
+    size(); window.addEventListener('resize', size);
+    const darkQ = matchMedia('(prefers-color-scheme: dark)');
+    let sysDark = darkQ.matches;
+    try { darkQ.addEventListener('change', (e) => { sysDark = e.matches; }); } catch (e) { darkQ.addListener && darkQ.addListener((ev) => { sysDark = ev.matches; }); }
+    const isDark = () => { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : sysDark; };
+    let dark = isDark() ? 1 : 0, last = performance.now(), vt = 0, nF = 0, aF = 0, half = false, flip = false;
+    let cx0 = NaN, cy0 = NaN, cz0 = NaN, skip = false, scOn = false, grace = 0;
+    // kembali dari background / ganti tab: frame-frame pertama selalu lambat (browser baru bangun), dan itu dulu dibaca sebagai "perangkat tidak kuat"
+    // sehingga resolusi laut diturunkan berkali-kali dan batas atasnya ikut dikunci rendah (tampak 144p dan tidak pernah pulih). Sekarang: reset ke resolusi penuh + masa tenggang sebelum mengukur lagi.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      sc = scMax; scCap = scMax; seaLock = false; seaDrop = null; half = false; nF = 0; aF = 0;
+      last = performance.now(); grace = last + 2000; apply();
+    });
+    function frame(now) {
+      const raw = (now - last) / 1000, dt = Math.min(0.05, raw); last = now;
+      if (!ship.vis) { requestAnimationFrame(frame); return; }   // kapal tertutup: laut tidak digambar sama sekali (hemat GPU)
+      // resolusi dinamis: kalau perangkat tidak sanggup ~50 fps, turunkan jumlah piksel laut; kalau lega, naikkan pelan-pelan
+      if (!half && !seaLock && now > grace && raw < 0.1 && !document.hidden) {      // lonjakan > 100 ms (tab dibangunkan, GC) bukan ukuran kemampuan GPU
+        aF += raw; nF++;
+        if (nF >= 24) {
+          const avg = aF / nF; nF = 0; aF = 0;
+          let acted = false;
+          if (seaDrop) {                                             // cek: apakah penurunan resolusi tadi benar-benar membantu?
+            const d = seaDrop; seaDrop = null;
+            if (avg > d.avg * .93) { sc = d.sc; scCap = d.sc; seaLock = true; apply(); acted = true; }   // tidak membantu = laut bukan penyebab lambatnya: kembalikan ketajaman, jangan diturunkan lagi
+          }
+          if (!acted) {
+            if (avg > SEA_SLOW && sc > SEA_MIN) { seaDrop = { sc, avg }; scCap = Math.min(scCap, sc * .92); sc = Math.max(SEA_MIN, sc * .84); apply(); }
+            else if (avg > .03 && sc <= SEA_MIN) half = true;
+            else if (avg < .0175 && sc < scCap) { sc = Math.min(scCap, sc * 1.07); apply(); }
+          }
+        }
+      }
+      vt += dt * (rm() ? 0.25 : 1);                                  // waktu virtual: tidak loncat saat tab kembali dibuka
+      if (window.__theming) {                                        // ganti tema: warna laut langsung benar, digambar 30 fps selama lingkaran membuka
+        dark = isDark() ? 1 : 0;
+        flip = !flip; if (flip) { requestAnimationFrame(frame); return; }
+      } else dark += ((isDark() ? 1 : 0) - dark) * Math.min(1, dt * 4);
+      if (half) { flip = !flip; if (flip) { requestAnimationFrame(frame); return; } }       // masih berat walau resolusi terendah: gambar tiap 2 frame (30 fps stabil lebih halus daripada 20-an yang naik-turun)
+      // HP: kalau kamera diam, laut digambar tiap 2 frame saja (30 fps; aliran air pelan jadi tidak terasa), GPU lega untuk animasi lain. Kamera bergerak / dunia membuka = penuh 60 fps.
+      if (COARSE && !half) {
+        const still = cam.x === cx0 && cam.y === cy0 && cam.z === cz0 && !ship.clip;
+        cx0 = cam.x; cy0 = cam.y; cz0 = cam.z;
+        if (still) { skip = !skip; if (skip) { requestAnimationFrame(frame); return; } } else skip = false;
+      }
+      // dunia sedang membuka / menutup: hanya gambar kotak yang membungkus lingkaran yang terlihat (awal animasi = area kecil)
+      const cl = ship.clip;
+      if (cl) {
+        const k = cv.width / W, pad = 56, x0 = Math.max(0, Math.floor((cl.x - cl.r - pad) * k)), x1 = Math.min(cv.width, Math.ceil((cl.x + cl.r + pad) * k));
+        const y0 = Math.max(0, Math.floor(cv.height - (cl.y + cl.r + pad) * k)), y1 = Math.min(cv.height, Math.ceil(cv.height - (cl.y - cl.r - pad) * k));
+        if (!scOn) { gl.enable(gl.SCISSOR_TEST); scOn = true; }
+        gl.scissor(x0, y0, Math.max(0, x1 - x0), Math.max(0, y1 - y0));
+      } else if (scOn) { gl.disable(gl.SCISSOR_TEST); scOn = false; }
+      gl.uniform2f(U.uRes, W, H); gl.uniform2f(U.uCam, cam.x, cam.y);
+      gl.uniform1f(U.uTime, vt); gl.uniform1f(U.uZoom, cam.z);
+      gl.uniform1f(U.uU, Math.min(W, H) / 100); gl.uniform1f(U.uDark, dark); gl.uniform1f(U.uScale, sc);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  })();
+
+  /* ---------- camar: kawanan 2-4 ekor melintas di atas kapal (arah dan jalurnya acak), sayap mengepak lalu meluncur bergantian, bayangannya jatuh ke bawah ---------- */
+  (function initBirds() {
+    const host = $('#sky');
+    if (!host || rm()) return;
+    const wing = '<path d="M53 40C62 33 78 38 93 49C95 51 94 54 91 54C80 53 68 58 55 66Z" fill="#f5f7f4"/><path d="M82 42.5C87 44.5 91 47 93 49C95 51 94 54 91 54C87 53.5 84 53.5 80 54.5Z" fill="#aab4b3"/>';
+    const body = '<path d="M50 24C54.5 24 56.5 28 56.5 34L57.5 52C57.5 60 59 66 58 72L61 82C57 80 53.5 79.5 50 80.5C46.5 79.5 43 80 39 82L42 72C41 66 42.5 60 42.5 52L43.5 34C43.5 28 45.5 24 50 24Z" fill="#f8faf7"/><path d="M48.4 25.5L50 19L51.6 25.5Z" fill="#e8873a"/>';
+    const shape = () => '<g class="wr">' + wing + '</g><g transform="translate(100 0) scale(-1 1)"><g class="wl">' + wing + '</g></g>' + body;   // sisi kiri = cermin sisi kanan
+    const svg = '<svg class="gull" viewBox="0 0 100 100" aria-hidden="true"><g class="gs" transform="translate(7 12)">' + shape().replace(/#[0-9a-f]{6}/gi, '#06232a') + '</g><g class="gb" stroke="#3b4a4a" stroke-opacity=".5" stroke-width=".9" stroke-linejoin="round">' + shape() + '</g></svg>';
+    const tpl = document.createElement('template'); tpl.innerHTML = svg;
+    const rand = (a, b) => a + Math.random() * (b - a);
+    const flocks = [];
+
+    // tampilan layar saat ini dalam satuan dunia (ikut zoom dan geser kamera): pusat dan setengah lebar/tinggi
+    function view() { const r = camU(), z = cam.z * r.u; return { x: -cam.x / z, y: -cam.y / z, hx: r.w / 2 / z, hy: r.h / 2 / z }; }
+    function spawn() {
+      const v = view(), R = Math.hypot(v.hx, v.hy) + 24;                                         // mulai di luar layar, jadi masuk dengan terbang, bukan muncul tiba-tiba
+      const n = 2 + Math.floor(Math.random() * 3);
+      const th = rand(0, Math.PI * 2);
+      const x = v.x + Math.cos(th) * R, y = v.y + Math.sin(th) * R;
+      const a = Math.atan2(v.y + rand(-.45, .45) * v.hy - y, v.x + rand(-.45, .45) * v.hx - x);   // menuju sekitar tengah layar
+      const f = { x, y, a, v: rand(6.5, 10), ph: rand(0, 6.28), turn: rand(.03, .09), glide: false, nextSw: rand(2, 4), birds: [], born: 0, life: 90 };
+      for (let i = 0; i < n; i++) {
+        const node = tpl.content.firstChild.cloneNode(true);
+        node.style.setProperty('--fd', (-rand(0, .46)).toFixed(2) + 's');
+        node.style.opacity = '0';
+        host.append(node);
+        const k = Math.ceil(i / 2), side = i === 0 ? 0 : (i % 2 ? 1 : -1);
+        f.birds.push({ node, ox: side * k * rand(6, 8), oy: k * rand(5, 8), wob: rand(0, 6.28), sc: rand(.88, 1.08) });
+      }
+      flocks.push(f);
+    }
+    function step(f, dt) {
+      f.born += dt;
+      f.a += Math.sin(f.born * .35 + f.ph) * f.turn * dt;                                            // jalur melengkung pelan
+      f.x += Math.cos(f.a) * f.v * dt; f.y += Math.sin(f.a) * f.v * dt;
+      f.nextSw -= dt;
+      if (f.nextSw <= 0) { f.glide = !f.glide; f.nextSw = f.glide ? rand(1.6, 3.2) : rand(3, 6); for (const b of f.birds) b.node.classList.toggle('glide', f.glide); }
+      const c = Math.cos(f.a), s = Math.sin(f.a), deg = f.a * 180 / Math.PI + 90;                     // sprite menghadap ke atas (-y)
+      for (const b of f.birds) {
+        b.wob += dt * 1.3;
+        const lx = b.ox + Math.sin(b.wob) * .9, ly = b.oy + Math.cos(b.wob * .8) * .7;                // posisi relatif pemimpin (kanan, belakang)
+        b.node.style.transform = 'translate(' + (f.x - s * lx - c * ly).toFixed(2) + 'cqmin,' + (f.y + c * lx - s * ly).toFixed(2) + 'cqmin) rotate(' + deg.toFixed(1) + 'deg) scale(' + b.sc.toFixed(2) + ')';
+      }
+    }
+    let last = performance.now(), nextSpawn = rand(1.5, 3);                                       // kawanan pertama masuk dari luar layar sesaat setelah dibuka
+    function frame(now) {
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      nextSpawn -= dt;
+      if (nextSpawn <= 0 && flocks.length < 3) { spawn(); nextSpawn = rand(14, 26); }
+      for (let i = flocks.length - 1; i >= 0; i--) {
+        const f = flocks[i]; step(f, dt);
+        const v = view(), away = (f.x - v.x) * Math.cos(f.a) + (f.y - v.y) * Math.sin(f.a) > 0, out = Math.hypot(f.x - v.x, f.y - v.y) > Math.hypot(v.hx, v.hy) + 24;
+        const op = Math.min(1, f.born / 2) * Math.min(1, Math.max(0, (f.life - f.born) / 2.5));   // masuk dan keluar dengan memudar halus
+        for (const b of f.birds) b.node.style.opacity = op.toFixed(2);
+        if (f.born > 3 && ((out && away) || f.born > f.life)) { for (const b of f.birds) b.node.remove(); flocks.splice(i, 1); }
+      }
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  })();
+
 })();
