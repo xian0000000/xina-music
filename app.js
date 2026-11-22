@@ -824,6 +824,7 @@
   }
 
   function frame(now) {
+    if (now - last < 30 && !document.hasFocus()) { requestAnimationFrame(frame); return; }   // jendela terlihat tapi tidak sedang dipakai: ~30 fps saja (tidak ada yang berinteraksi); fokus kembali = penuh lagi
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
 
@@ -1071,11 +1072,14 @@
       if (!v) throw new Error('kosong');
       const arr = Array.isArray(v) ? v : Object.keys(v).sort((a, b) => a - b).map((k) => v[k]);
       const parts = [];
-      for (const c of arr) {                                   // satu potongan (256 KB) per giliran, lalu beri napas ke UI (animasi tidak macet saat lagu masuk)
-        const bin = atob(c), u = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-        parts.push(u);
-        await new Promise((r) => setTimeout(r));
+      for (const c of arr) {                                   // decode base64 secara native (di luar main thread) dan tanpa setTimeout per potongan, jadi tidak ikut diperlambat throttle tab background
+        try { parts.push(await (await fetch('data:application/octet-stream;base64,' + c)).blob()); }
+        catch (e) {                                            // cadangan: cara lama
+          const bin = atob(c), u = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+          parts.push(u);
+          await new Promise((r) => setTimeout(r));
+        }
       }
       const blob = new Blob(parts, { type: t.type || 'audio/mpeg' });
       idbPut(t.id, blob);
@@ -1147,11 +1151,15 @@
     applyPlayback();
   };
   for (const ev of ['pointerup', 'touchend', 'click', 'keydown']) document.addEventListener(ev, unlockPlay, true);
+  let playStartAt = 0;
+  audio.addEventListener('playing', () => { playStartAt = performance.now(); });
+  audio.addEventListener('seeked', () => { playStartAt = performance.now(); });
   setInterval(() => {                                            // koreksi drift pelan-pelan + lanjutkan kalau tiba-tiba terhenti (mis. diinterupsi sistem)
     if (!shd() || !shared.pb || !shared.pb.playing || shared.loadedSid !== shared.pb.sid || seeking) return;
     if (audio.paused) { if (!needTap && !shared.loadingSid) applyPlayback(); return; }
+    if (audio.readyState < 3 || performance.now() - playStartAt < 2500) return;   // masih buffering / baru mulai: jangan di-seek lagi (itu yang terdengar loncat)
     const target = sharedPos();
-    if (isFinite(audio.duration) && target < audio.duration - 0.3 && Math.abs(audio.currentTime - target) > 0.4) audio.currentTime = target;
+    if (isFinite(audio.duration) && target < audio.duration - 0.3 && Math.abs(audio.currentTime - target) > 0.7) audio.currentTime = target;
   }, 1500);
 
   function startShared() {
@@ -1263,9 +1271,10 @@
       for (let k = 0; k < L.length; k++) {                       // lagu setelah yang sedang berbunyi didahulukan
         const t = L[(st + k) % L.length];
         if (!shd() || shared.loadingSid) break;                  // lagu yang sedang dibutuhkan didahulukan
-        if (shared.blobs.has(t.id) || await idbHas(t.id)) continue;
-        await downloadBlob(t);
-        await new Promise((r) => setTimeout(r, 1200));
+        if (shared.blobs.has(t.id)) continue;
+        if (await idbHas(t.id)) { const c = await idbGet(t.id); if (c) blobUrl(t.id, c); continue; }   // sudah di perangkat: siapkan URL-nya sekarang, jadi ganti lagu tidak menunggu baca IndexedDB
+        blobUrl(t.id, await downloadBlob(t));
+        if (!document.hidden) await new Promise((r) => setTimeout(r, 1200));   // jeda hanya saat layar aktif (di background timer ini justru ditahan browser)
       }
     } catch (e) { prefetchSoon(30000); }
     prefBusy = false;
@@ -1299,6 +1308,35 @@
     s.onload = () => res(); s.onerror = () => { lameP = null; rej(new Error('lame')); };
     document.head.append(s);
   }));
+  // Worker dibuat dari Blob (lame.min.js + kode encode), jadi tidak ada file baru yang perlu ikut di-deploy
+  let workerSrcP = null;
+  const workerSrc = () => workerSrcP || (workerSrcP = fetch('lame.min.js').then((r) => { if (!r.ok) throw new Error('lame'); return r.text(); }).then((lib) => lib + `
+;self.onmessage = (ev) => {
+  const { pcmF, rate, kbps } = ev.data, n = pcmF.length, pcm = new Int16Array(n);
+  for (let i = 0; i < n; i++) { const v = Math.max(-1, Math.min(1, pcmF[i])); pcm[i] = v < 0 ? v * 32768 : v * 32767; }
+  const enc = new lamejs.Mp3Encoder(1, rate, kbps), out = [], B = 1152 * 20;
+  let tP = 0;
+  for (let i = 0; i < n; i += B) {
+    const d = enc.encodeBuffer(pcm.subarray(i, i + B));
+    if (d.length) out.push(d);
+    const t = Date.now();
+    if (t - tP > 250) { tP = t; self.postMessage({ p: i / n }); }
+  }
+  const e = enc.flush(); if (e.length) out.push(e);
+  self.postMessage({ done: out }, out.map((x) => x.buffer));
+};`).catch((e) => { workerSrcP = null; throw e; }));
+  async function encodeInWorker(pcmF, rate, onProg) {
+    if (!window.Worker) throw new Error('no worker');
+    const url = URL.createObjectURL(new Blob([await workerSrc()], { type: 'text/javascript' }));
+    const w = new Worker(url);
+    try {
+      return await new Promise((res, rej) => {
+        w.onmessage = (ev) => { if (ev.data.done) res(new Blob(ev.data.done, { type: 'audio/mpeg' })); else onProg && onProg(ev.data.p); };
+        w.onerror = (ev) => rej(new Error((ev && ev.message) || 'worker'));
+        w.postMessage({ pcmF, rate, kbps: KBPS }, [pcmF.buffer]);
+      });
+    } finally { w.terminate(); URL.revokeObjectURL(url); }
+  }
   async function compressAudio(f, onProg) {
     await loadLame();
     const AC = window.AudioContext || window.webkitAudioContext, ctx = new AC();
@@ -1308,6 +1346,8 @@
     const oc = new OfflineAudioContext(1, len, rate), src = oc.createBufferSource();   // 1 kanal: stereo otomatis dicampur ke mono
     src.buffer = buf; src.connect(oc.destination); src.start();
     const pcmF = (await oc.startRendering()).getChannelData(0);
+    try { return await encodeInWorker(pcmF.slice(), rate, onProg); }      // encode MP3 di Web Worker: halaman (animasi, scroll, ketukan) tetap mulus
+    catch (e) { console.warn('worker kompres tidak tersedia, pakai jalur biasa', e); }
     const pcm = new Int16Array(pcmF.length);
     for (let i = 0; i < pcmF.length; i++) { const v = Math.max(-1, Math.min(1, pcmF[i])); pcm[i] = v < 0 ? v * 32768 : v * 32767; }
     const enc = new lamejs.Mp3Encoder(1, rate, KBPS), out = [], B = 1152 * 20;
