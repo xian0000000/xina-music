@@ -1446,7 +1446,14 @@
         const li = document.createElement('li'), b = document.createElement('button');
         b.type = 'button'; b.className = 'yt-item';
         const img = new Image();
-        img.src = 'https://i.ytimg.com/vi/' + it.id + '/mqdefault.jpg'; img.alt = ''; img.loading = 'lazy';
+        img.alt = ''; img.referrerPolicy = 'no-referrer'; img.decoding = 'async';
+        let retried = false;
+        img.onerror = () => {                                  // gagal dimuat langsung dari YouTube: ambil lewat Worker
+          if (retried) return;
+          retried = true;
+          try { img.src = ytProxy() + '/thumb?id=' + it.id; } catch (e) { /* abaikan */ }
+        };
+        img.src = 'https://i.ytimg.com/vi/' + it.id + '/mqdefault.jpg';
         const s = document.createElement('span'), t = document.createElement('b'), d = document.createElement('small');
         t.textContent = it.title; d.textContent = it.dur || '';
         s.append(t, d); b.append(img, s);
