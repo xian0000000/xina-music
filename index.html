@@ -186,26 +186,52 @@
 <div class="songpanel" id="songPanel" role="dialog" aria-modal="true" aria-label="Daftar lagu" hidden>
   <div class="sp-back" id="spBack"></div>
   <div class="sp-card">
+    <div class="sp-grab" aria-hidden="true"></div>
     <div class="sp-head">
-      <div class="sp-title"><b>Daftar lagu</b><small id="spInfo"></small></div>
+      <div class="sp-title"><b>Musik</b><small id="spInfo"></small></div>
       <button type="button" class="sp-x" id="spClose" aria-label="Tutup"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
-    <ul class="sp-list" id="spList"></ul>
-    <div class="sp-empty" id="spEmpty" hidden>Belum ada lagu. Tambah lagu pertamamu.</div>
-    <div class="sm-act"><button type="button" class="sm-save" id="spAdd">+ Tambah lagu</button></div>
-    <div class="sm-hint" id="spHint"></div>
-    <details class="yt" id="ytBox">
-      <summary>Unduh dari YouTube</summary>
-      <label class="sm-l" for="ytProxy">URL Worker</label>
-      <input id="ytProxy" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://nama-worker.subdomain.workers.dev">
-      <label class="sm-l" for="ytQ">Cari lagu</label>
-      <input id="ytQ" type="search" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="judul / artis, lalu Enter">
+    <div class="sp-tabs" role="tablist" aria-label="Bagian panel">
+      <button type="button" role="tab" class="sp-tab on" id="spTabL" data-tab="list" aria-selected="true" aria-controls="spPaneL">Lagu <span class="sp-count" id="spCount">0</span></button>
+      <button type="button" role="tab" class="sp-tab" id="spTabY" data-tab="yt" aria-selected="false" aria-controls="spPaneY">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M21.6 7.2a2.5 2.5 0 0 0-1.76-1.77C18.27 5 12 5 12 5s-6.27 0-7.84.43A2.5 2.5 0 0 0 2.4 7.2C2 8.78 2 12 2 12s0 3.22.4 4.8a2.5 2.5 0 0 0 1.76 1.77C5.73 19 12 19 12 19s6.27 0 7.84-.43a2.5 2.5 0 0 0 1.76-1.77C22 15.22 22 12 22 12s0-3.22-.4-4.8zM10 15V9l5.2 3z"/></svg>
+        YouTube
+      </button>
+    </div>
+
+    <div class="sp-pane" id="spPaneL" role="tabpanel" aria-labelledby="spTabL">
+      <ul class="sp-list" id="spList"></ul>
+      <div class="sp-empty" id="spEmpty" hidden>
+        <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg>
+        <b>Belum ada lagu</b>
+        <span>Upload file atau ambil dari YouTube.</span>
+        <button type="button" class="sp-btn pri" id="spGoYt">Cari di YouTube</button>
+      </div>
+      <div class="sp-foot">
+        <button type="button" class="sp-btn" id="spAdd"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>Upload file</button>
+        <p class="sm-hint" id="spHint"></p>
+      </div>
+    </div>
+
+    <div class="sp-pane" id="spPaneY" role="tabpanel" aria-labelledby="spTabY" hidden>
+      <form class="yt-bar" id="ytForm" autocomplete="off">
+        <svg class="yt-ic" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="ytQ" type="text" inputmode="search" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Cari lagu atau tempel link YouTube" placeholder="Cari lagu atau tempel link">
+        <button type="button" class="yt-clear" id="ytClear" aria-label="Hapus" hidden>&times;</button>
+        <button type="submit" class="yt-go" id="ytGo">Cari</button>
+      </form>
+      <div class="yt-status" id="ytStatus" hidden><span class="yt-spin" aria-hidden="true"></span><span class="yt-log" id="ytLog" role="status" aria-live="polite"></span></div>
       <ul class="yt-res" id="ytRes"></ul>
-      <label class="sm-l" for="ytUrl">Link video YouTube</label>
-      <input id="ytUrl" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://www.youtube.com/watch?v=...">
-      <div class="sm-act"><button type="button" class="sm-save" id="ytGo">Unduh &amp; bagikan</button></div>
-      <div class="sm-hint yt-log" id="ytLog" role="status" aria-live="polite">Lagu diunduh sebagai MP3, dikompres, lalu langsung dibagikan ke lobby seperti upload biasa.</div>
-    </details>
+      <div class="yt-tip" id="ytTip">
+        <b>Cara pakai</b>
+        <span>Ketik judul lalu ketuk hasilnya, atau tempel link video. Lagu diunduh sebagai MP3, dikompres, lalu dibagikan ke lobby seperti upload biasa.</span>
+      </div>
+      <details class="yt-set" id="ytSet">
+        <summary>Pengaturan Worker</summary>
+        <label class="sm-l" for="ytProxy">URL Worker</label>
+        <input id="ytProxy" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://nama-worker.subdomain.workers.dev">
+      </details>
+    </div>
   </div>
 </div>
 

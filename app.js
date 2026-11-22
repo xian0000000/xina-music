@@ -1412,34 +1412,48 @@
   }
 
   /* ---- unduh dari YouTube lewat Worker, lalu langsung masuk alur upload yang sama (kompres -> Firebase) ---- */
-  const ytEl = { proxy: $('#ytProxy'), url: $('#ytUrl'), go: $('#ytGo'), log: $('#ytLog') };
-  const YT_FIXED = String(window.YT_WORKER || '').trim();       // dari config.js (secret YT_WORKER); kalau ada, kolom input disembunyikan
+  const ytEl = { proxy: $('#ytProxy'), q: $('#ytQ'), go: $('#ytGo'), log: $('#ytLog'), status: $('#ytStatus'), res: $('#ytRes'), tip: $('#ytTip'), set: $('#ytSet'), clear: $('#ytClear'), form: $('#ytForm') };
+  const YT_FIXED = String(window.YT_WORKER || '').trim();       // dari config.js (secret YT_WORKER); kalau ada, pengaturan Worker disembunyikan
   ytEl.proxy.value = YT_FIXED || store.get('yt.proxy', store.get('proxy', ''));
-  if (YT_FIXED) { ytEl.proxy.hidden = true; const l = document.querySelector('label[for="ytProxy"]'); if (l) l.hidden = true; }
-  yt.say = (m, c) => { ytEl.log.textContent = m; ytEl.log.className = 'sm-hint yt-log' + (c ? ' ' + c : ''); };
+  if (YT_FIXED) ytEl.set.hidden = true; else if (!ytEl.proxy.value) ytEl.set.open = true;
+  const YT_URL = /(?:youtu\.be\/|youtube\.com\/|youtube-nocookie\.com\/)/i;
+  const isYtUrl = (v) => YT_URL.test(v.trim());
+  yt.say = (m, c, busy) => {
+    ytEl.log.textContent = m || '';
+    ytEl.status.hidden = !m;
+    ytEl.status.className = 'yt-status' + (c ? ' ' + c : '') + (busy ? ' busy' : '');
+    ytEl.tip.hidden = !!m || ytEl.res.childElementCount > 0;
+  };
   function ytProxy() {
     let p = ytEl.proxy.value.trim();
-    if (!p) throw new Error('Isi URL Worker dulu');
+    if (!p) { ytEl.set.open = true; ytEl.proxy.focus({ preventScroll: true }); throw new Error('Isi URL Worker dulu di Pengaturan Worker'); }
     if (!/^https?:\/\//i.test(p)) p = 'https://' + p;
     p = p.replace(/[?#].*$/, '').replace(/\/+$/, '');
     if (!YT_FIXED) store.set('yt.proxy', p);
     return p;
   }
-  async function ytRun() {
+  const ytSync = () => {                                          // label tombol mengikuti isi kolom: link -> Unduh, teks -> Cari
+    const v = ytEl.q.value.trim();
+    ytEl.go.textContent = isYtUrl(v) ? 'Unduh' : 'Cari';
+    ytEl.clear.hidden = !v;
+  };
+  ytEl.q.addEventListener('input', ytSync);
+  ytEl.clear.addEventListener('click', () => { ytEl.q.value = ''; ytSeq++; ytEl.res.replaceChildren(); yt.say(''); ytSync(); ytEl.q.focus(); });
+  async function ytRun(v, row) {
     if (yt.busy) return;
     yt.busy = true; ytEl.go.disabled = true;
-    let p, v, title = '', dlUrl = '';
+    ytEl.res.classList.add('lock'); if (row) row.classList.add('busy');
+    let p, title = '', dlUrl = '';
     try {
       p = ytProxy();
-      v = ytEl.url.value.trim();
       if (!v) throw new Error('Isi link YouTube dulu');
-      yt.say('Convert di y2mate.gs…');
+      yt.say('Menyiapkan MP3…', '', true);
       const r = await fetch(p + '/convert?' + new URLSearchParams({ v, f: 'mp3' }));
       const j = await r.json().catch(() => null);
       if (!j || !j.ok) throw new Error((j && j.error) || 'status ' + r.status);
       title = String(j.title || 'Tanpa judul');
       dlUrl = p + '/dl?' + new URLSearchParams({ u: j.downloadURL, name: title, ext: 'mp3' });
-      yt.say('Mengunduh "' + title + '"…');
+      yt.say('Mengunduh "' + title + '"…', '', true);
       let blob;
       try {
         const d = await fetch(dlUrl);
@@ -1448,69 +1462,78 @@
       } catch (e) {
         if (e instanceof TypeError) {                          // biasanya CORS: Worker belum mengizinkan baca /dl dari halaman ini
           const a = document.createElement('a'); a.href = dlUrl; document.body.append(a); a.click(); a.remove();
-          throw new Error('File diunduh ke folder download, tapi tidak bisa diteruskan otomatis (Worker /dl belum mengizinkan CORS). Pilih file itu lewat "+ Tambah lagu".');
+          throw new Error('File diunduh ke folder download, tapi tidak bisa diteruskan otomatis (Worker /dl belum mengizinkan CORS). Pilih file itu lewat "Upload file".');
         }
         throw e;
       }
       if (!blob.size) throw new Error('File kosong dari Worker');
       const safe = title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Tanpa judul';
       const file = new File([blob], safe + '.mp3', { type: 'audio/mpeg' });
-      yt.say('Memproses…');
+      yt.say('Memproses & membagikan…', '', true);
       const res = addFiles([file]);                            // sama persis dengan memilih file: kompres, unggah, bagikan
       const n = res && res.then ? await res : -1;              // -1 = mode lokal (tanpa lobby), lagu ditambahkan ke daftar perangkat
       if (n === 0) throw new Error('Gagal membagikan lagu ke lobby');
       yt.say(n === -1 ? '"' + title + '" ditambahkan ke daftar lagu.' : '"' + title + '" dibagikan ke lobby.', 'ok');
-      ytEl.url.value = '';
+      ytEl.q.value = ''; ytEl.res.replaceChildren(); ytSync();
     } catch (e) {
-      yt.say('ERROR: ' + e.message, 'bad');
+      yt.say(e.message, 'bad');
     }
     yt.busy = false; ytEl.go.disabled = false;
+    ytEl.res.classList.remove('lock'); if (row) row.classList.remove('busy');
   }
-  ytEl.go.addEventListener('click', ytRun);
-  ytEl.url.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ytRun(); } });
 
   /* ---- cari lagu lewat Worker (/search): tampil thumbnail + judul, ketuk satu untuk langsung unduh & bagikan ---- */
-  const ytQ = $('#ytQ'), ytRes = $('#ytRes');
   let ytSeq = 0;
   async function ytSearch() {
-    const q = ytQ.value.trim();
-    if (q.length < 2) { ytSeq++; ytRes.replaceChildren(); return; }
+    const q = ytEl.q.value.trim();
+    if (q.length < 2) { ytSeq++; ytEl.res.replaceChildren(); yt.say(''); return; }
     const my = ++ytSeq;
     try {
-      yt.say('Mencari…');
-      const r = await fetch(ytProxy() + '/search?' + new URLSearchParams({ q }));
+      const px = ytProxy();
+      yt.say('Mencari…', '', true);
+      const r = await fetch(px + '/search?' + new URLSearchParams({ q }));
       const j = await r.json().catch(() => null);
       if (my !== ytSeq) return;                                // ada pencarian yang lebih baru
       if (!j || !j.ok) throw new Error((j && j.error) || 'status ' + r.status);
-      ytRes.replaceChildren(...j.items.map((it) => {
+      if (!j.items.length) { ytEl.res.replaceChildren(); yt.say('Tidak ada hasil untuk "' + q + '".'); return; }
+      ytEl.res.replaceChildren(...j.items.map((it) => {
         const li = document.createElement('li'), b = document.createElement('button');
-        b.type = 'button'; b.className = 'yt-item';
+        b.type = 'button'; b.className = 'yt-item'; b.setAttribute('aria-label', 'Unduh ' + it.title);
+        const th = document.createElement('span'); th.className = 'yt-th';
         const img = new Image();
-        img.alt = ''; img.referrerPolicy = 'no-referrer'; img.decoding = 'async';
+        img.alt = ''; img.referrerPolicy = 'no-referrer'; img.decoding = 'async'; img.loading = 'lazy';
         let retried = false;
         img.onerror = () => {                                  // gagal dimuat langsung dari YouTube: ambil lewat Worker
           if (retried) return;
           retried = true;
-          try { img.src = ytProxy() + '/thumb?id=' + it.id; } catch (e) { /* abaikan */ }
+          try { img.src = px + '/thumb?id=' + it.id; } catch (e) { /* abaikan */ }
         };
         img.src = 'https://i.ytimg.com/vi/' + it.id + '/mqdefault.jpg';
+        th.append(img);
+        if (it.dur) { const du = document.createElement('i'); du.textContent = it.dur; th.append(du); }
         const s = document.createElement('span'), t = document.createElement('b'), d = document.createElement('small');
-        t.textContent = it.title; d.textContent = it.dur || '';
-        s.append(t, d); b.append(img, s);
-        b.addEventListener('click', () => {
-          if (yt.busy) return;                                 // masih ada unduhan berjalan
-          ytEl.url.value = 'https://youtu.be/' + it.id;        // link terisi otomatis, tidak perlu disalin
-          ytRes.replaceChildren(); ytQ.value = '';
-          ytRun();
-        });
+        s.className = 'yt-tx'; t.textContent = it.title; d.textContent = it.by || it.channel || it.author || '';
+        s.append(t); if (d.textContent) s.append(d);
+        const dl = document.createElement('span'); dl.className = 'yt-dl'; dl.setAttribute('aria-hidden', 'true');
+        dl.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>';
+        b.append(th, s, dl);
+        b.addEventListener('click', () => { if (!yt.busy) ytRun('https://youtu.be/' + it.id, b); });
         li.append(b); return li;
       }));
-      yt.say(j.items.length + ' hasil. Ketuk salah satu untuk mengunduh.');
+      yt.say('');
+      ytEl.tip.hidden = true;
     } catch (e) {
-      if (my === ytSeq) { ytRes.replaceChildren(); yt.say('ERROR: ' + e.message, 'bad'); }
+      if (my === ytSeq) { ytEl.res.replaceChildren(); yt.say(e.message, 'bad'); }
     }
   }
-  ytQ.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ytSearch(); } });
+  ytEl.form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (yt.busy) return;
+    const v = ytEl.q.value.trim();
+    if (!v) { ytEl.q.focus(); return; }
+    if (isYtUrl(v)) ytRun(v); else ytSearch();
+    ytEl.q.blur();
+  });
 
   async function initFirebase() {
     let start = 0;
@@ -1819,11 +1842,13 @@
   function renderSongPanel() {
     const L = state.tracks, canDel = shd(), cur = state.index;
     const total = L.reduce((a, t) => a + (t.size || 0), 0);
-    spInfo.textContent = L.length + (canDel ? ' / ' + MAX_SONGS : '') + ' lagu' + (total ? ' · ' + mb(total) : '');
+    spInfo.textContent = L.length ? L.length + (canDel ? ' / ' + MAX_SONGS : '') + ' lagu' + (total ? ' · ' + mb(total) : '') : 'Belum ada lagu';
     spEmpty.hidden = L.length > 0;
+    $('#spCount').textContent = L.length;
+    $('.sp-foot').classList.toggle('solo', L.length === 0);
     spHint.textContent = canDel
-      ? 'Lagu dibagikan ke semua orang di lobby. Kalau lebih dari ' + MAX_SONGS + ' lagu, yang paling lama dihapus otomatis. Maks 4 MB per lagu setelah dikompres.'
-      : 'Sedang offline atau mode lokal: hapus lagu hanya bisa saat tersambung ke lobby.';
+      ? 'Dibagikan ke semua orang di lobby. Lebih dari ' + MAX_SONGS + ' lagu: yang paling lama dihapus otomatis. Maks 4 MB per lagu.'
+      : 'Offline atau mode lokal: hapus lagu hanya bisa saat tersambung ke lobby.';
     spList.textContent = '';
     L.forEach((t, i) => {
       const li = document.createElement('li'); li.className = 'sp-row' + (i === cur ? ' cur' : '');
@@ -1865,7 +1890,7 @@
   }
   function openSongPanel() {
     if (sp.open) return;
-    sp.open = true; spSure = null;
+    sp.open = true; spSure = null; spTab('list');
     if (typeof pops !== 'undefined') pops.forEach((o) => o.close());
     renderSongPanel();
     songPanel.hidden = false; void songPanel.offsetWidth; songPanel.classList.add('show');
@@ -1880,6 +1905,13 @@
   $('#spClose').addEventListener('click', closeSongPanel);
   $('#spBack').addEventListener('click', closeSongPanel);
   $('#spAdd').addEventListener('click', () => el.file.click());
+  function spTab(name, focus) {
+    for (const b of document.querySelectorAll('.sp-tab')) { const on = b.dataset.tab === name; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); }
+    $('#spPaneL').hidden = name !== 'list'; $('#spPaneY').hidden = name !== 'yt';
+    if (name === 'yt' && focus && !yt.busy && matchMedia('(hover: hover)').matches) $('#ytQ').focus({ preventScroll: true });
+  }
+  for (const b of document.querySelectorAll('.sp-tab')) b.addEventListener('click', () => spTab(b.dataset.tab, true));
+  $('#spGoYt').addEventListener('click', () => spTab('yt', true));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sp.open) closeSongPanel(); });
 
   /* ---------- popover kecil di bawah tombol header (ganti nama & catetan): tanpa prompt/alert bawaan browser ---------- */
