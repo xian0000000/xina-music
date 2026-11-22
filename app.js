@@ -1429,6 +1429,42 @@
   ytEl.go.addEventListener('click', ytRun);
   ytEl.url.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ytRun(); } });
 
+  /* ---- cari lagu lewat Worker (/search): tampil thumbnail + judul, ketuk satu untuk langsung unduh & bagikan ---- */
+  const ytQ = $('#ytQ'), ytRes = $('#ytRes');
+  let ytSeq = 0;
+  async function ytSearch() {
+    const q = ytQ.value.trim();
+    if (q.length < 2) { ytSeq++; ytRes.replaceChildren(); return; }
+    const my = ++ytSeq;
+    try {
+      yt.say('Mencari…');
+      const r = await fetch(ytProxy() + '/search?' + new URLSearchParams({ q }));
+      const j = await r.json().catch(() => null);
+      if (my !== ytSeq) return;                                // ada pencarian yang lebih baru
+      if (!j || !j.ok) throw new Error((j && j.error) || 'status ' + r.status);
+      ytRes.replaceChildren(...j.items.map((it) => {
+        const li = document.createElement('li'), b = document.createElement('button');
+        b.type = 'button'; b.className = 'yt-item';
+        const img = new Image();
+        img.src = 'https://i.ytimg.com/vi/' + it.id + '/mqdefault.jpg'; img.alt = ''; img.loading = 'lazy';
+        const s = document.createElement('span'), t = document.createElement('b'), d = document.createElement('small');
+        t.textContent = it.title; d.textContent = it.dur || '';
+        s.append(t, d); b.append(img, s);
+        b.addEventListener('click', () => {
+          if (yt.busy) return;                                 // masih ada unduhan berjalan
+          ytEl.url.value = 'https://youtu.be/' + it.id;        // link terisi otomatis, tidak perlu disalin
+          ytRes.replaceChildren(); ytQ.value = '';
+          ytRun();
+        });
+        li.append(b); return li;
+      }));
+      yt.say(j.items.length + ' hasil. Ketuk salah satu untuk mengunduh.');
+    } catch (e) {
+      if (my === ytSeq) { ytRes.replaceChildren(); yt.say('ERROR: ' + e.message, 'bad'); }
+    }
+  }
+  ytQ.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ytSearch(); } });
+
   async function initFirebase() {
     let start = 0;
     try { start = Math.max(0, parseInt(sessionStorage.getItem('lobby.srv'), 10) || 0) % FIREBASE_CONFIGS.length; } catch (e) { /* abaikan */ }
