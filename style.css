@@ -1074,15 +1074,6 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
     radial-gradient(ellipse 120% 100% at 50% 50%, transparent 55%, rgba(0,20,40,.28) 100%);
 }
 .sea canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-/* laut video (video/sea-light.mp4 + video/sea-dark.mp4): menggantikan shader WebGL kalau filenya ada. Sama seperti .world, .sea-cam ikut zoom / geser kamera (app.js camApply),
-   dan videonya duduk di tengah dek dengan ukuran dalam satuan dunia (1 satuan = 1cqmin = 1% sisi pendek layar), jadi lambung dan buihnya selalu pas di bawah kapal di layar mana pun.
-   Videonya dirender untuk area dunia 480 x 640 satuan (x -240..240, y -320..320, kapal di tengah); ubah --sv-w / --sv-h kalau area render berbeda. */
-.sea-cam { position: absolute; inset: 0; pointer-events: none; }
-.sea-video {
-  position: absolute; left: 50%; top: 50%; width: var(--sv-w, 480cqmin); height: var(--sv-h, 640cqmin); translate: -50% -50%;
-  display: block; object-fit: fill; pointer-events: none; background: transparent;
-}
-.sea-video[hidden] { display: none; }
 
 /* ---------- kapal ---------- */
 .ship, .ship-sails {

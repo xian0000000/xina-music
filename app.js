@@ -2743,11 +2743,10 @@
   /* kamera: `cam` = posisi yang sedang digambar (dibaca laut WebGL, camar, dan dunia kapal), `tgt` = tujuan. cam.x / cam.y = posisi pusat dek relatif ke pusat layar.
      Posisi diam (zoom 1, tanpa geseran) = `off`: pusat panggung (tengah jam) yang sedikit di bawah header. Satu loop (camTick) menyusulkan `cam` ke `tgt` dengan peredaman
      yang tidak bergantung frame rate; seret dan cubit mengikuti jari 1:1. Dunia kapal dan lobby ditulis SEKALI per frame, jadi tidak pernah selisih. */
-  const bdrop = $('#backdrop'), world = $('#world'), seaCam = $('#seaCam'), appEl = document.querySelector('.app');
+  const bdrop = $('#backdrop'), world = $('#world'), appEl = document.querySelector('.app');
   // antrean GPU: laut berat, dan kalau frame baru terus dikirim sebelum yang lama selesai, antreannya menumpuk 2-3 frame, jadi sentuhan baru terlihat ratusan ms kemudian
   // (terasa sebagai "jeda dulu baru nyambung" saat mulai geser). Sekarang maksimal 1 frame laut yang sedang dikerjakan; kamera DOM dan laut ditulis bersama, jadi tetap sinkron.
   let seaBusy = () => false, seaSkip = false;
-  let seaCover = () => false;                                        // true selama laut video aktif: zoom out dibatasi supaya video (480 x 640 satuan dunia) selalu menutup layar
   const cam = { z: 1, x: 0, y: 0 }, tgt = { z: 1, x: 0, y: 0 }, CAM_MIN = 0.4, CAM_MAX = 3.2;
   const off = { x: 0, y: 0 };
   let fit = 1;                                                       // skala lobby supaya muat di dek (<= 1)
@@ -2775,23 +2774,15 @@
     fit = Math.min(1, DECK_R * Math.min(bw, bh) / (0.5 * m));
     camDirty = true;
   }
-  function camZMin() {                                               // zoom out terjauh: biasa CAM_MIN; saat laut video aktif, naik secukupnya supaya video selalu menutup layar
-    if (!seaCover()) return CAM_MIN;
-    const u = camRect.u;                                             // video menutup x -240..240, y -320..320 (satuan dunia); layar + geseran maksimal (48 / 88 satuan) harus tetap di dalamnya
-    const hw = camRect.w / (2 * u) + Math.abs(off.x) / u, hh = camRect.h / (2 * u) + Math.abs(off.y) / u;   // + selisih pusat dek terhadap pusat layar (dek tidak persis di tengah)
-    return Math.max(CAM_MIN, hw / (240 * .95 - 48), hh / (320 * .93 - 88));   // margin pengaman 5-7% dari tepi video (address bar HP naik-turun, layar diputar, dll)
-  }
   function camClamp(o) {
     const u = camRect.u;
-    const zmin = camZMin();
-    o.z = Math.min(CAM_MAX, Math.max(zmin, o.z));
+    o.z = Math.min(CAM_MAX, Math.max(CAM_MIN, o.z));
     const mx = 48 * u * o.z, my = 88 * u * o.z;                     // batas geser: kapal (dan layarnya) tidak boleh hilang dari layar
     o.x = off.x + Math.min(mx, Math.max(-mx, o.x - off.x)); o.y = off.y + Math.min(my, Math.max(-my, o.y - off.y));
   }
   function camApply() {
     camClamp(cam);
     if (world) world.style.transform = 'translate(' + cam.x.toFixed(2) + 'px,' + cam.y.toFixed(2) + 'px) scale(' + cam.z.toFixed(4) + ')';
-    if (seaCam) seaCam.style.transform = 'translate(' + cam.x.toFixed(2) + 'px,' + cam.y.toFixed(2) + 'px) scale(' + cam.z.toFixed(4) + ')';   // laut video ikut kamera persis seperti dunia kapal
     const st = el.stage.style;
     if (ship.mix === 0 && Math.abs(cam.z - 1) < 1e-4 && Math.abs(cam.x - off.x) < 0.05 && Math.abs(cam.y - off.y) < 0.05) { st.translate = ''; st.scale = ''; return; }   // lobby polos: tidak disentuh sama sekali
     // lobby mengecil di tengah dek (skala `fit` x mix) dan ikut zoom / geser kamera; pusatnya selalu jatuh di pusat dek
@@ -2856,7 +2847,7 @@
   // lalu dijaga di tempatnya tiap frame oleh camTick (pegas di skala log), jadi zoom masuk dan keluar sama halusnya dan tidak melenceng.
   function camZoomSmooth(nz, sx, sy, T) {
     camAnim = null; camFling = null;
-    nz = Math.min(CAM_MAX, Math.max(camZMin(), nz));
+    nz = Math.min(CAM_MAX, Math.max(CAM_MIN, nz));
     camAnchor = { sx, sy, wx: (sx - cam.x) / cam.z, wy: (sy - cam.y) / cam.z };
     tgt.z = nz; tgt.x = sx - camAnchor.wx * nz; tgt.y = sy - camAnchor.wy * nz;
     camClamp(tgt);
@@ -2865,7 +2856,7 @@
     camBusy = true;
   }
   function camZoomNow(ratio, sx, sy) {                               // cubit: langsung mengikuti jari tanpa jeda
-    const nz = Math.min(CAM_MAX, Math.max(camZMin(), cam.z * ratio)), k = nz / cam.z;
+    const nz = Math.min(CAM_MAX, Math.max(CAM_MIN, cam.z * ratio)), k = nz / cam.z;
     cam.x = sx - (sx - cam.x) * k; cam.y = sy - (sy - cam.y) * k; cam.z = nz;
     camSync();
   }
@@ -3088,56 +3079,6 @@
   (function initSea() {
     const host = $('#sea');
     if (!host) return;
-    /* ---------- laut video: loop 20 detik, dirender sekali di luar, jadi tidak ada beban shader di GPU. ----------
-       Tema terang -> video/sea-light.mp4, tema gelap -> video/sea-dark.mp4 (cadangan .webm: sea-light.webm / sea-dark.webm). Kalau file untuk tema yang aktif tidak ada / gagal dimuat,
-       laut WebGL lama dijalankan sebagai cadangan (startGL di bawah). Video hanya diputar selama dunia kapal terlihat. */
-    const vid = $('#seaVideo');
-    let useVideo = false, glStarted = false, glCanvas = null, vidTheme = '';
-    const vidDark = () => { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; };
-    const vidReduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-    function vidFallback() {                                         // video tidak tersedia untuk tema ini: pakai shader
-      useVideo = false;
-      if (vid) { vid.hidden = true; try { vid.pause(); } catch (e) {} }
-      if (glCanvas) glCanvas.style.display = '';
-      if (!glStarted) { glStarted = true; startGL(); }
-    }
-    function vidSources(v, name, theme, onFail) {
-      while (v.firstChild) v.removeChild(v.firstChild);
-      for (const [ext, type] of [['mp4', 'video/mp4'], ['webm', 'video/webm']]) {
-        const so = document.createElement('source'); so.src = 'video/' + name + '-' + theme + '.' + ext; so.type = type;
-        so.onerror = () => { if (so.parentNode && !so.nextElementSibling && vidTheme === theme) onFail(); };   // sumber terakhir gagal = tidak ada video
-        v.appendChild(so);
-      }
-      v.load();
-    }
-    function vidLoad() {
-      if (!vid) { vidFallback(); return; }
-      const theme = vidDark() ? 'dark' : 'light';
-      if (theme === vidTheme) return;
-      vidTheme = theme;
-      useVideo = false;
-      vid.onloadeddata = () => {
-        if (vidTheme !== theme) return;
-        useVideo = true; vid.hidden = false;
-        if (glCanvas) glCanvas.style.display = 'none';
-        vidSync();
-      };
-      vid.onerror = () => { if (vidTheme === theme) vidFallback(); };
-      vidSources(vid, 'sea', theme, vidFallback);
-    }
-    function vidSync() {                                             // putar hanya saat kapal terlihat dan gerak tidak dikurangi; selain itu jeda (hemat decoder)
-      if (!vid || !useVideo) return;
-      if (ship.vis && !vidReduced() && !document.hidden) { if (vid.paused) { const pr = vid.play(); if (pr && pr.catch) pr.catch(() => {}); } }
-      else if (!vid.paused) vid.pause();
-    }
-    seaCover = () => useVideo && !!vid && !vid.hidden;
-    setInterval(vidSync, 500);
-    document.addEventListener('visibilitychange', vidSync);
-    try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', vidLoad); } catch (e) {}
-    new MutationObserver(vidLoad).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    vidLoad();
-
-    function startGL() {
     const cv = document.createElement('canvas');
     const glOpt = { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'low-power' };
     const gl = cv.getContext('webgl2', glOpt) || cv.getContext('webgl', glOpt);   // webgl2 dipakai untuk fence (pembatas antrean GPU); shader tetap GLSL ES 1.0
@@ -3298,7 +3239,7 @@ void main(){
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
       gl.uniform1i(U.uN, 0);
     }
-    host.append(cv); glCanvas = cv; if (useVideo) cv.style.display = 'none';
+    host.append(cv);
     if (gl.fenceSync) {                                              // webgl2: tahu kapan GPU selesai dengan frame laut sebelumnya
       const fences = [];                                              // frame laut yang sudah dikirim tapi belum selesai dikerjakan GPU (paling lama di depan)
       let since = 0;
@@ -3338,7 +3279,7 @@ void main(){
     let scOn = false;
     function frame(now) {
       const dt = Math.min(0.05, (now - last) / 1000); last = now;
-      if (!ship.vis || useVideo) { last = now; requestAnimationFrame(frame); return; }   // kapal tertutup, atau laut video aktif: shader tidak digambar sama sekali (hemat GPU)
+      if (!ship.vis) { requestAnimationFrame(frame); return; }   // kapal tertutup: laut tidak digambar sama sekali (hemat GPU)
       vt += dt * (rm() ? 0.25 : 1);                                  // waktu virtual: tidak loncat saat tab kembali dibuka, dan tetap berjalan walau frame ditahan
       if (seaSkip) { requestAnimationFrame(frame); return; }         // GPU masih sibuk dengan frame laut sebelumnya
       if (window.__theming) dark = isDark() ? 1 : 0;                 // ganti tema: warna laut langsung benar
@@ -3360,7 +3301,6 @@ void main(){
       requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
-    }   // startGL
   })();
 
   /* ---------- camar: kawanan 2-4 ekor melintas di atas kapal (arah dan jalurnya acak), sayap mengepak lalu meluncur bergantian, bayangannya jatuh ke bawah ---------- */
@@ -3427,39 +3367,4 @@ void main(){
     requestAnimationFrame(frame);
   })();
 
-})();
-
-/* ---------- alat diagnosa lag (hanya aktif kalau URL berisi ?fps atau ?off=...) ----------
-   ?fps                      tampilkan FPS di pojok kiri atas
-   ?off=sea,ship,sails,lamp,gull,bob,seats,anim   matikan bagian tertentu (pisah koma) untuk mencari penyebab lag
-     sea = laut (video / WebGL)      ship = badan kapal + layar       sails = animasi layar saja     lamp = animasi lampu
-     gull = camar                    bob = goyangan naik-turun dunia   seats = animasi avatar / instrumen
-     anim = SEMUA animasi CSS */
-(function lagTool() {
-  const q = new URLSearchParams(location.search), off = (q.get('off') || '').split(',').map((x) => x.trim()).filter(Boolean);
-  if (!q.has('fps') && !off.length) return;
-  const R = {
-    sea: '#sea{display:none!important}',
-    ship: '.ship,.ship-sails{display:none!important}',
-    sails: '.ship-sails .sh-sail{animation:none!important}',
-    lamp: '.sh-lamp{animation:none!important}',
-    gull: '.sky{display:none!important}',
-    bob: '.world{animation:none!important}',
-    seats: '.seat .avatar *,.seat .ins,.seat .ins::before{animation:none!important}',
-    anim: '*,*::before,*::after{animation:none!important;transition:none!important}',
-  };
-  const css = off.map((k) => R[k] || '').join('\n');
-  if (css) { const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); }
-  const box = document.createElement('div');
-  box.style.cssText = 'position:fixed;left:6px;top:6px;z-index:99999;font:12px/1.3 monospace;color:#0f0;background:rgba(0,0,0,.72);padding:4px 7px;border-radius:6px;pointer-events:none;white-space:pre';
-  document.body.appendChild(box);
-  let n = 0, t0 = performance.now(), prev = t0, worst = 0, slow = 0;
-  (function tick(now) {
-    const d = now - prev; prev = now; n++; if (d > worst) worst = d; if (d > 50) slow++;
-    if (now - t0 >= 1000) {
-      box.textContent = Math.round(n * 1000 / (now - t0)) + ' fps  |  terburuk ' + Math.round(worst) + ' ms  |  >50ms: ' + slow + '\noff: ' + (off.join(',') || '-');
-      n = 0; t0 = now; worst = 0; slow = 0;
-    }
-    requestAnimationFrame(tick);
-  })(performance.now());
 })();

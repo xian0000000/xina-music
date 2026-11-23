@@ -1,7 +1,7 @@
 /* Service worker: bikin aplikasi bisa di-install dan cangkangnya (halaman, gaya, skrip, font) tetap terbuka saat offline.
    Strategi file satu origin: jaringan dulu, tapi kalau jaringan lambat (>3,5 dtk) atau mati, pakai cache. Pembaruan tetap sampai ke pengguna.
    Font Google: cache dulu, diperbarui diam-diam. Firebase dan lagu bersama tidak disentuh (lagu disimpan di IndexedDB oleh app.js). */
-const CACHE = 'xina-music-v69';
+const CACHE = 'xina-music-v66';
 const SHELL = ['./', 'index.html', 'app.js', 'style.css', 'lame.min.js', 'config.js', 'tick.wav', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg', 'icons/apple-touch-icon.png', 'icons/icon-maskable-512.png'];
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
@@ -34,7 +34,6 @@ async function cacheFirst(req) {
 self.addEventListener('fetch', (e) => {
   const req = e.request, url = new URL(req.url);
   if (req.method !== 'GET') return;
-  if (req.headers.has('range') || /\/video\//.test(new URL(req.url).pathname)) return;   // video laut: biarkan browser yang mengurus (permintaan Range tidak cocok dengan cache)
   if (url.origin === location.origin) { e.respondWith(networkFirst(req)); return; }
   if (FONT_HOSTS.includes(url.hostname)) e.respondWith(cacheFirst(req));
 });
