@@ -1,7 +1,7 @@
 /* Service worker: bikin aplikasi bisa di-install dan cangkangnya (halaman, gaya, skrip, font) tetap terbuka saat offline.
    Strategi file satu origin: jaringan dulu, tapi kalau jaringan lambat (>3,5 dtk) atau mati, pakai cache. Pembaruan tetap sampai ke pengguna.
    Font Google: cache dulu, diperbarui diam-diam. Firebase dan lagu bersama tidak disentuh (lagu disimpan di IndexedDB oleh app.js). */
-const CACHE = 'xina-music-v66';
+const CACHE = 'xina-music-v71';
 const SHELL = ['./', 'index.html', 'app.js', 'style.css', 'lame.min.js', 'config.js', 'tick.wav', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg', 'icons/apple-touch-icon.png', 'icons/icon-maskable-512.png'];
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];

@@ -3140,39 +3140,27 @@ void main(){
     if (sh0 > .04 && sh0 < .96 && abs(p.x) < hullHW(sh0) - 3.) { gl_FragColor = vec4(mix(vec3(.62, .83, .81), vec3(.20, .42, .47), uDark), 1.); return; }
   }
   vec2 pf = p - vec2(0., 9.) * t;
-  vec2 warp = vec2(fbm(pf * .045 + vec2(0., t * .012)), fbm(pf * .045 + 7.3 - t * .010)) - .5;
-  vec2 q = pf + warp * 15.;
+  vec2 q = pf;
 
   // warna dasar: teal kusam dengan bercak gelap / terang seperti marmer
-  vec3 deep  = mix(vec3(.11, .28, .33), vec3(.025, .075, .10), uDark);
   vec3 mid   = mix(vec3(.18, .40, .45), vec3(.05, .15, .19), uDark);
   vec3 light = mix(vec3(.28, .52, .57), vec3(.09, .24, .28), uDark);
   vec3 vcol0 = vec3(.50, .74, .76);
   vec3 vcol  = mix(vec3(.62, .83, .81), vec3(.20, .42, .47), uDark);
   vec3 fcol  = mix(vec3(.94, .985, .98), vec3(.55, .72, .76), uDark);
-  float body = fbm(q * .085 + 3.1);
-  vec3 col = mix(deep, mid, smoothstep(.28, .62, body));
-  col *= .93 + .14 * mix(fbm(q * .55), .5, smoothstep(.22, .6, fp));   // bintik halus (memudar ke rata saat zoom out)
+  // bercak gelap (marmer hitam) dan bintik halus dihapus: warna dasar rata teal-sedang, hanya sedikit lebih terang di daerah 'patch'. Lebih bersih dan 2 fbm lebih ringan per piksel.
+  vec3 col = mix(mid, light, .18);
 
-  // urat air (retakan terang tipis), kuat-lemahnya berbeda-beda per daerah
-  float patch = smoothstep(.30, .78, fbm(q * .10 + 21.));
-  vec2 w1 = vec2(fbm(q * .26), fbm(q * .26 + 4.7)) - .5;          // lekukan: garis urat tidak lurus, bercabang seperti marmer
-  float vw = max(.060, fp * 1.5 / 7.5);                            // garis urat tidak pernah lebih tipis dari ~1,5 piksel (anti pecah saat zoom out); makin lebar makin pudar supaya total terangnya tetap
-  float v1 = (1. - smoothstep(0., vw, vein((q + w1 * 4.2) / 7.5, t * .30))) * (.060 / vw);
-  // urat air: hanya satu lapis (urat besar) dan lebih tipis / lebih jarang; lapis kedua (urat halus) dihapus: laut lebih bersih dan GPU jauh lebih ringan
-  float veins = clamp(v1 * (.05 + .55 * patch), 0., 1.);
+  // urat air / corak laut dihapus: permukaan polos, hanya warna dasar + kilau ombak
+  vec2 w1 = vec2(fbm(q * .26), fbm(q * .26 + 4.7)) - .5;          // lekukan: garis urat tidak lurus, bercabang
+  float vw = max(.032, fp * 1.2 / 7.5);                            // urat tipis; tidak lebih tipis dari batas piksel (anti pecah saat zoom out)
+  float v1 = (1. - smoothstep(0., vw, vein((q + w1 * 4.2) / 7.5, t * .30))) * (.032 / vw);
+  float veins = clamp(v1 * .32, 0., 1.);                           // kekuatan merata (tanpa bercak daerah kuat/lemah)
   col = mix(col, vcol, veins * .50);
 
   // (buih kecil / pita buih di laut lepas sengaja dihapus; buih di sekitar kapal tetap ada di bagian lambung di bawah)
 
-  // kilau matahari di lereng ombak + sisi yang menghadap cahaya lebih terang
-  float e = .35;
-  float h  = height(q, t), hx = height(q + vec2(e, 0.), t), hy = height(q + vec2(0., e), t);
-  vec3 n = normalize(vec3(-(hx - h) / e * .45, -(hy - h) / e * .45, 1.));
-  vec3 L = normalize(vec3(-.45, .55, .70));
-  col *= .92 + .16 * clamp(dot(n, L), 0., 1.);
-  float spec = pow(max(dot(n, normalize(L + vec3(0., 0., 1.))), 0.), 160.);
-  col += spec * (1. - smoothstep(.25, .7, fp)) * mix(.26, .06, uDark) * vec3(1., 1., .94);   // kilau memudar saat zoom out (titik sekecil piksel berkedip)
+  // shading ombak (garis miring terang-gelap) dan kilau dihapus: permukaan laut rata
 
   // ---- kapal membelah air: garis air tipis + gelombang haluan yang mengikuti lambung ----
   // Ringan: tanpa fbm, hanya sin() + satu pembacaan tekstur. Tidak ada buih berserabut di sepanjang lambung lagi.
@@ -3217,6 +3205,7 @@ void main(){
   col = mix(col, mix(vcol, fcol, .75), foam * .88);
 
   col = mix(col, vcol, smoothstep(sw * 1.8 + 3., sw * .8, d) * (1. - foam) * veins * .30);   // riak halus di sekitar lambung
+
 
   gl_FragColor = vec4(col, 1.);
 }`.replace('HULLFN', HULLFN);
@@ -3303,68 +3292,5 @@ void main(){
     requestAnimationFrame(frame);
   })();
 
-  /* ---------- camar: kawanan 2-4 ekor melintas di atas kapal (arah dan jalurnya acak), sayap mengepak lalu meluncur bergantian, bayangannya jatuh ke bawah ---------- */
-  (function initBirds() {
-    const host = $('#sky');
-    if (!host || rm()) return;
-    const wing = '<path d="M53 40C62 33 78 38 93 49C95 51 94 54 91 54C80 53 68 58 55 66Z" fill="#f5f7f4"/><path d="M82 42.5C87 44.5 91 47 93 49C95 51 94 54 91 54C87 53.5 84 53.5 80 54.5Z" fill="#aab4b3"/>';
-    const body = '<path d="M50 24C54.5 24 56.5 28 56.5 34L57.5 52C57.5 60 59 66 58 72L61 82C57 80 53.5 79.5 50 80.5C46.5 79.5 43 80 39 82L42 72C41 66 42.5 60 42.5 52L43.5 34C43.5 28 45.5 24 50 24Z" fill="#f8faf7"/><path d="M48.4 25.5L50 19L51.6 25.5Z" fill="#e8873a"/>';
-    const shape = () => '<g class="wr">' + wing + '</g><g transform="translate(100 0) scale(-1 1)"><g class="wl">' + wing + '</g></g>' + body;   // sisi kiri = cermin sisi kanan
-    const svg = '<svg class="gull" viewBox="0 0 100 100" aria-hidden="true"><g class="gs" transform="translate(7 12)">' + shape().replace(/#[0-9a-f]{6}/gi, '#06232a') + '</g><g class="gb" stroke="#3b4a4a" stroke-opacity=".5" stroke-width=".9" stroke-linejoin="round">' + shape() + '</g></svg>';
-    const tpl = document.createElement('template'); tpl.innerHTML = svg;
-    const rand = (a, b) => a + Math.random() * (b - a);
-    const flocks = [];
-
-    // tampilan layar saat ini dalam satuan dunia (ikut zoom dan geser kamera): pusat dan setengah lebar/tinggi
-    function view() { const r = camU(), z = cam.z * r.u; return { x: -cam.x / z, y: -cam.y / z, hx: r.w / 2 / z, hy: r.h / 2 / z }; }
-    function spawn() {
-      const v = view(), R = Math.hypot(v.hx, v.hy) + 24;                                         // mulai di luar layar, jadi masuk dengan terbang, bukan muncul tiba-tiba
-      const n = 2 + Math.floor(Math.random() * 3);
-      const th = rand(0, Math.PI * 2);
-      const x = v.x + Math.cos(th) * R, y = v.y + Math.sin(th) * R;
-      const a = Math.atan2(v.y + rand(-.45, .45) * v.hy - y, v.x + rand(-.45, .45) * v.hx - x);   // menuju sekitar tengah layar
-      const f = { x, y, a, v: rand(6.5, 10), ph: rand(0, 6.28), turn: rand(.03, .09), glide: false, nextSw: rand(2, 4), birds: [], born: 0, life: 90 };
-      for (let i = 0; i < n; i++) {
-        const node = tpl.content.firstChild.cloneNode(true);
-        node.style.setProperty('--fd', (-rand(0, .46)).toFixed(2) + 's');
-        node.style.opacity = '0';
-        host.append(node);
-        const k = Math.ceil(i / 2), side = i === 0 ? 0 : (i % 2 ? 1 : -1);
-        f.birds.push({ node, ox: side * k * rand(6, 8), oy: k * rand(5, 8), wob: rand(0, 6.28), sc: rand(.88, 1.08) });
-      }
-      flocks.push(f);
-    }
-    function step(f, dt, draw) {
-      f.born += dt;
-      f.a += Math.sin(f.born * .35 + f.ph) * f.turn * dt;                                            // jalur melengkung pelan
-      f.x += Math.cos(f.a) * f.v * dt; f.y += Math.sin(f.a) * f.v * dt;
-      f.nextSw -= dt;
-      if (f.nextSw <= 0) { f.glide = !f.glide; f.nextSw = f.glide ? rand(1.6, 3.2) : rand(3, 6); for (const b of f.birds) b.node.classList.toggle('glide', f.glide); }
-      if (!draw) return;                                                                              // di luar layar: posisi tetap dihitung, tapi DOM tidak disentuh
-      const c = Math.cos(f.a), s = Math.sin(f.a), deg = f.a * 180 / Math.PI + 90;                     // sprite menghadap ke atas (-y)
-      for (const b of f.birds) {
-        b.wob += dt * 1.3;
-        const lx = b.ox + Math.sin(b.wob) * .9, ly = b.oy + Math.cos(b.wob * .8) * .7;                // posisi relatif pemimpin (kanan, belakang)
-        b.node.style.transform = 'translate(' + (f.x - s * lx - c * ly).toFixed(2) + 'cqmin,' + (f.y + c * lx - s * ly).toFixed(2) + 'cqmin) rotate(' + deg.toFixed(1) + 'deg) scale(' + b.sc.toFixed(2) + ')';
-      }
-    }
-    let last = performance.now(), nextSpawn = rand(1.5, 3);                                       // kawanan pertama masuk dari luar layar sesaat setelah dibuka
-    function frame(now) {
-      const dt = Math.min(0.05, (now - last) / 1000); last = now;
-      if (!ship.vis) { requestAnimationFrame(frame); return; }                                    // kapal tertutup: camar tidak dihitung sama sekali
-      nextSpawn -= dt;
-      if (nextSpawn <= 0 && flocks.length < 3) { spawn(); nextSpawn = rand(14, 26); }
-      const v = view(), vr = Math.hypot(v.hx, v.hy) + 24;
-      for (let i = flocks.length - 1; i >= 0; i--) {
-        const f = flocks[i]; step(f, dt, Math.hypot(f.x - v.x, f.y - v.y) < vr + 12);
-        const away = (f.x - v.x) * Math.cos(f.a) + (f.y - v.y) * Math.sin(f.a) > 0, out = Math.hypot(f.x - v.x, f.y - v.y) > vr;
-        const op = Math.min(1, f.born / 2) * Math.min(1, Math.max(0, (f.life - f.born) / 2.5));   // masuk dan keluar dengan memudar halus
-        if (!out) for (const b of f.birds) b.node.style.opacity = op.toFixed(2);
-        if (f.born > 3 && ((out && away) || f.born > f.life)) { for (const b of f.birds) b.node.remove(); flocks.splice(i, 1); }
-      }
-      requestAnimationFrame(frame);
-    }
-    requestAnimationFrame(frame);
-  })();
 
 })();
