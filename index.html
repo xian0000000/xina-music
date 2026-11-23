@@ -18,7 +18,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Xina Music">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <link rel="stylesheet" href="style.css?v=65">
+  <link rel="stylesheet" href="style.css?v=66">
 </head>
 <body class="empty ship-locked">
 
@@ -28,7 +28,7 @@
      Tersembunyi di balik lingkaran radius 0 di gir tengah jam; app.js (initShipGate) membukanya saat lagu mencapai 1 menit. -->
 <div class="backdrop" id="backdrop" aria-hidden="true">
   <div class="shipclip" id="shipclip"><div class="shipin" id="shipin">
-  <div class="sea" id="sea"></div>
+  <div class="sea" id="sea"><div class="sea-cam" id="seaCam"><video class="sea-video" id="seaVideo" muted loop playsinline preload="auto" disablepictureinpicture disableremoteplayback aria-hidden="true" hidden></video></div></div>
   <div class="world" id="world">
     <svg class="ship" viewBox="0 0 620 1600" aria-hidden="true">
 <defs>
@@ -805,7 +805,7 @@
 </div>
 
 <script src="config.js"></script>
-<script src="app.js?v=65"></script>
+<script src="app.js?v=67"></script>
 
 </body>
 </html>
