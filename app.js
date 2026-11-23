@@ -3165,39 +3165,36 @@ void main(){
   float spec = pow(max(dot(n, normalize(L + vec3(0., 0., 1.))), 0.), 160.);
   col += spec * mix(.26, .06, uDark) * vec3(1., 1., .94);
 
-  // ---- air di sekitar lambung: bayangan, lalu buih yang mengalir di sisi kapal dan melebar jadi jejak di belakang ----
+  // ---- kapal membelah air: garis air tipis + gelombang haluan yang mengikuti lambung ----
+  // Ringan: tanpa fbm, hanya sin() + satu pembacaan tekstur. Tidak ada buih berserabut di sepanjang lambung lagi.
   float sh = (p.y + 67.) / 134.;                                 // 0 = haluan, 1 = buritan
   float hw = hullHW(sh);
   float dx = abs(p.x) - hw;
   float dy = max(max(-67. - p.y, p.y - 67.), 0.);
   float d = length(vec2(max(dx, 0.), dy));                       // jarak ke lambung
   float behind = max(p.y - 67., 0.);
+  float shc = clamp(sh, 0., 1.);
 
   col *= 1. - .38 * smoothstep(9., 0., d);                       // air gelap di bawah bayangan kapal
 
-  vec2 pw = p - vec2(0., 22.) * t;                               // buih mengalir cepat di sepanjang lambung
-  float fa = fbm(pw * vec2(.60, .20));
-  float fb = fbm(pw * vec2(1.7, .75) + 7.);
-  float fl = clamp(fa * .70 + fb * .55, 0., 1.);                 // tekstur berserabut memanjang searah aliran
-  float shc = clamp(sh, 0., 1.);
-  // tepi buih bergelombang: gelombang berjalan ke buritan + lekukan acak, makin besar ke belakang
-  float edgeW = (sin((p.y - 22. * t) * .30) * .55 + sin((p.y - 22. * t) * .71 + 1.7) * .30 + (fa - .5) * 2.4) * (.5 + 1.6 * smoothstep(.1, 1., shc) + behind * .05);
-  // lebar efektif air berbuih: mengikuti lambung sampai sekitar 70% panjang, lalu bertahan dan melebar pelan ke belakang buritan.
-  // Jadi buih di sisi kapal mengalir lurus menjadi jejak, bukan mengecil mengikuti ujung buritan lalu tiba-tiba melebar.
-  float hwEff = behind > 0. ? 26.5 + behind * .10 : hullHW(min(shc, .70));
-  float dE = max(abs(p.x) - hwEff - edgeW, 0.);
-  float sidew = 3.0 + 9. * smoothstep(.10, .95, shc) + 4. * smoothstep(.36, .06, shc) + behind * .10;
-  float env = smoothstep(170., 0., behind);                      // makin jauh dari buritan makin tipis, lepas jadi bercak
-  float near = smoothstep(sidew, sidew * .05, dE) * env;
-  near *= smoothstep(0., .14, sh);                               // buih mulai dari haluan, tidak ada di depan kapal
-  float body2 = clamp(near * mix(1., .70, smoothstep(0., 30., behind)), 0., 1.);   // di belakang buritan lebih renggang: bercak buih, bukan lapisan putih rata
-  float foam = smoothstep(.30, .66, body2 * .95 + (fl - .50) * 1.5 * smoothstep(0., .18, near));   // bercak buih hanya muncul di dekat kapal; jauh dari kapal (near = 0) tidak ada bintik buih
-  foam = clamp(foam + smoothstep(2.2, 0., d) * .35, 0., 1.);     // tepi lambung hampir selalu putih
-  vec3 aqua = mix(vcol, fcol, .25);
-  vec3 fc2 = mix(aqua, fcol, smoothstep(.34, .74, fl + near * .5));
-  col = mix(col, fc2, foam * (.80 + .2 * fl));
-  // riak halus di luar buih (garis-garis pantulan buih)
-  col = mix(col, vcol, smoothstep(sidew * 1.8, sidew * .8, d) * (1. - foam) * veins * .35);
+  // air putih tipis menempel di lambung: tebal di haluan (terdorong), menipis di tengah, naik lagi di buritan
+  float flow = p.y - 20. * t;
+  float wob = sin(flow * .33) * .5 + sin(flow * .8 + 1.7) * .3;
+  float sw = 1.8 + 4.6 * smoothstep(.02, .14, shc) * smoothstep(.55, .16, shc) + 2.2 * smoothstep(.55, 1., shc);
+  float se = sw + wob * .9;
+  float side = smoothstep(se, se - 1.4, d) * (.55 + .45 * smoothstep(se, 0., d)) * smoothstep(0., .08, sh);   // tepi cukup tegas, bagian dalam lebih putih
+
+  // gelombang haluan: satu garis putih mengikuti kontur lambung (ukurannya sama dengan kapal), lalu melebar sedikit & memudar di belakang buritan
+  float hwE = behind > 0. ? 26.5 + behind * .12 : hw;
+  float da = abs(abs(p.x) - (hwE + 2.6 + sin(flow * .3) * .9));
+  float arm = smoothstep(1.7, .4, da) * smoothstep(80., 8., behind) * smoothstep(.02, .16, sh) * step(.8, d);
+  arm *= .6 + .4 * sin(flow * .35 + 1.);                         // denyut pelan ke arah buritan
+
+  float foam = clamp(side + arm * .8, 0., 1.);
+  foam = clamp(foam + smoothstep(1.8, 0., d) * .35, 0., 1.);     // tepi lambung hampir selalu putih
+  col = mix(col, mix(vcol, fcol, .75), foam * .88);
+  // riak halus di sekitar percikan
+  col = mix(col, vcol, smoothstep(sw * 1.8 + 3., sw * .8, d) * (1. - foam) * veins * .30);
 
   gl_FragColor = vec4(col, 1.);
 }`.replace('HULLFN', HULLFN);
