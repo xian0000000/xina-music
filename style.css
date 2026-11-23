@@ -1080,13 +1080,9 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
   position: absolute; left: 50%; top: 50%; translate: -50% -50%;
   width: 62cqmin; height: 160cqmin; overflow: visible; display: block; pointer-events: none;
 }
-.sh-lamp { animation: lamp 2.6s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+.sh-lamp { transform-box: fill-box; transform-origin: center; }   /* animasi kedip dimatikan (hemat GPU) */
 @keyframes lamp { from { opacity: .55; transform: scale(.9); } to { opacity: 1; transform: scale(1.1); } }
 .ship-sails .sh-sail { transform-box: view-box; transform-origin: 310px 405px; }
-.ship-sails .sj { animation: sail-a 7s ease-in-out infinite alternate; }
-.ship-sails .sr { animation: sail-b 8.5s ease-in-out -2s infinite alternate; }
-.ship-sails .sl { animation: sail-a 9s ease-in-out -4s infinite alternate; }
-.ship-sails .sm { animation: sail-b 10s ease-in-out -1s infinite alternate; }
 @keyframes sail-a { from { transform: rotate(-.7deg); } to { transform: rotate(.8deg); } }
 @keyframes sail-b { from { transform: rotate(.6deg); } to { transform: rotate(-.7deg); } }
 
@@ -1128,7 +1124,7 @@ body .shipclip.reveal-on .shipin { inset: auto; left: 0; top: 0; width: var(--vw
 /* ---------- wadah latar: layar penuh, DI BELAKANG lobby (di atas .bg, di bawah .app) ---------- */
 .backdrop { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; container-type: size; }
 /* 3.49 dtk x 2 = 6.98 dtk = periode swell di shader laut (sin(.9 t)): kapal naik-turun searah ombak yang lewat */
-.world { position: absolute; inset: 0; animation: bob 3.49s ease-in-out infinite alternate; }
+.world { position: absolute; inset: 0; }   /* ayunan kapal (bob) dimatikan: kapal diam, hemat GPU */
 @keyframes bob { from { translate: 0 -.35cqmin; rotate: -.22deg; } to { translate: 0 .35cqmin; rotate: .22deg; } }
 @media (prefers-reduced-motion: reduce) { .world { animation: none; } }
 

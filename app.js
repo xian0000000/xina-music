@@ -1840,6 +1840,7 @@
   function clogFit() {                                                // tinggi daftar = persis 4 pesan terakhir (pesan panjang yang membungkus tetap dihitung utuh)
     const k = clist.children, n = k.length;
     if (!n) { clist.style.maxHeight = ''; return; }
+    if (getComputedStyle(clog).display === 'none') return;      // panel masih tersembunyi (kapal terkunci): ukuran terbaca 0 dan daftar jadi gepeng 14px; hitung ulang saat kapal terbuka
     const first = k[Math.max(0, n - CLOG_SHOW)], last = k[n - 1];
     clist.style.maxHeight = (last.offsetTop + last.offsetHeight - first.offsetTop + 14) + 'px';
   }
@@ -3032,7 +3033,7 @@
       closeFrom = null;
       clearClips();
       ship.mix = p >= 1 ? 1 : 0; camDirty = true;
-      if (p >= 1) { body.classList.remove('ship-locked', 'ship-opening'); ship.open = true; ship.vis = true; camGlide(HOME_Z, off.x, off.y, 1100, 450); chatWake(); clogBottom(); }   // lingkaran selesai membuka di zoom 1, lalu otomatis zoom-in 1 langkah
+      if (p >= 1) { body.classList.remove('ship-locked', 'ship-opening'); ship.open = true; ship.vis = true; camGlide(HOME_Z, off.x, off.y, 1100, 450); clogFit(); chatWake(); clogBottom(); }   // lingkaran selesai membuka di zoom 1, lalu otomatis zoom-in 1 langkah
       else { body.classList.add('ship-locked'); body.classList.remove('ship-opening'); ship.open = false; ship.vis = false; }
     }
     function tick(now) {
@@ -3172,7 +3173,7 @@ void main(){
   float behind = max(p.y - 67., 0.);
   float shc = clamp(sh, 0., 1.);
 
-  col *= 1. - .38 * smoothstep(9., 0., d);                       // air gelap di bawah bayangan kapal
+  col *= 1. - .14 * smoothstep(5., 0., d);                       // air gelap di bawah bayangan kapal
 
   // air putih tipis menempel di lambung: tebal di haluan (terdorong), menipis di tengah, naik lagi di buritan
   float flow = p.y - 20. * t;
@@ -3185,14 +3186,13 @@ void main(){
   // Intensitas hanya berubah lembut (frekuensi rendah) dan memudar mulus ke belakang; di tengah V ada air putih bekas baling-baling yang menipis searah aliran.
   float u = max(p.y - 13.4, 0.);                                 // jarak ke buritan dihitung dari titik terlebar lambung (sh = .6)
   float xa = hullHW(min(shc, .6)) + .30 * (sqrt(u * u + 3600.) - 60.);   // garis tengah lengan: kemiringan 0 di awal, melengkung sangat pelan ke asimtot .30
-  float fade = exp(-u / 100.) * smoothstep(260., 60., u);         // lengan sedikit lebih pendek: memudar lebih cepat dan habis sebelum ~260 satuan
+  float fade = exp(-u / 70.) * smoothstep(150., 40., u);         // lengan sedikit lebih pendek: memudar lebih cepat dan habis sebelum ~260 satuan
   float wd = 1.8 + u * .03;                                      // lengan melebar dan melembut ke belakang
   float dE = abs(p.x) - xa - (sin(flow * .11) * .6 + sin(flow * .29 + 1.) * .3) * (.4 + u * .01);   // goyangan tepi pelan dan halus
   float arm = 0., fill = 0.;
   // jejak hanya dihitung di dekat kapal / lengannya (di depan haluan, jauh ke samping, atau jauh di belakang nilainya nol): melewati 2 fbm + beberapa exp untuk sebagian besar piksel
-  if (sh > 0. && u < 262. && dE < max(3., 10. * wd)) {
-    float nzA = fbm(vec2(flow * .03, abs(p.x) * .03 + 3.));      // variasi sangat pelan sepanjang lengan
-    float nzC = fbm(vec2(p.x * .10, flow * .02 + 9.));           // variasi pelan di tengah V
+  if (sh > 0. && u < 152. && dE < max(3., 10. * wd)) {
+    float nzA = .5 + .3 * sin(flow * .03 + abs(p.x) * .05), nzC = .5 + .3 * sin(flow * .02 + p.x * .08);   // variasi murah tanpa fbm
     arm = exp(-dE * dE / (2. * wd * wd)) + .35 * exp(-dE * dE / (2. * wd * wd * 7.));         // inti + halo lembut
     arm *= fade * (.82 + .36 * nzA) * smoothstep(.0, .1, sh);
     float inV = smoothstep(3., -10., dE);                        // di dalam V (antara lambung dan lengan)
@@ -3200,7 +3200,7 @@ void main(){
     fill = clamp(wash, 0., 1.);
   }
 
-  float foam = clamp(side + arm * 1.0 + fill * .75, 0., 1.);
+  float foam = clamp(side + arm * .5 + fill * .3, 0., 1.);
   foam = clamp(foam + smoothstep(1.8, 0., d) * .35, 0., 1.);     // tepi lambung hampir selalu putih
   col = mix(col, mix(vcol, fcol, .75), foam * .88);
 
