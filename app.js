@@ -1844,7 +1844,7 @@
     clist.style.maxHeight = (last.offsetTop + last.offsetHeight - first.offsetTop + 14) + 'px';
   }
   function chatClose() { clog.classList.add('closed'); clog.classList.remove('away'); clearTimeout(clogAway); if (cin) cin.blur(); }       // ketuk panel: tutup, tinggal tombol kecil
-  function chatOpen() { if (!clog.classList.contains('closed')) return; clog.classList.remove('closed', 'unread'); clogFit(); clist.scrollTop = clist.scrollHeight; chatWake(); }
+  function chatOpen() { if (!clog.classList.contains('closed')) return; clog.classList.remove('closed', 'unread'); clogFit(); clogBottom(); chatWake(); }
   function chatWake() {                                               // munculkan panel; hilang lagi kalau CLOG_IDLE tanpa pesan / ketikan / sentuhan
     if (!clog || clog.classList.contains('closed')) return;
     clog.classList.remove('away');
@@ -1854,9 +1854,9 @@
       clog.classList.add('away');
     }, CLOG_IDLE);
   }
+  function clogBottom() { if (!clist) return; clist.scrollTop = clist.scrollHeight; requestAnimationFrame(() => { clist.scrollTop = clist.scrollHeight; }); }   // dua kali: langsung, lalu setelah layout selesai (pesan membungkus / panel baru tampil)
   function logChat(name, hue, text, self) {
     if (!clist) return;
-    const stick = clist.scrollTop + clist.clientHeight >= clist.scrollHeight - 24;
     const li = document.createElement('div'); li.className = 'cl-line' + (self ? ' self' : '');
     const n = document.createElement('b'); n.textContent = name + ':'; n.style.color = 'hsl(' + (Number(hue) || 200) + ' 85% 74%)';
     const t = document.createElement('span'); t.textContent = ' ' + text; setLang(t, text);      // textContent: pesan orang lain tidak pernah dianggap HTML
@@ -1864,7 +1864,7 @@
     while (clist.children.length > CLOG_MAX) clist.firstChild.remove();
     if (clog.classList.contains('closed')) clog.classList.add('unread');      // ditutup manual: jangan muncul sendiri, cukup titik merah
     else { clogFit(); chatWake(); }
-    if (stick) clist.scrollTop = clist.scrollHeight;
+    clogBottom();                                                              // pesan baru (dari siapa pun) selalu menggulung daftar ke paling bawah
     clog.classList.add('hot'); clearTimeout(clogT); clogT = setTimeout(() => clog.classList.remove('hot'), 6000);
   }
   function chatFrom(id, raw) {
@@ -3032,7 +3032,7 @@
       closeFrom = null;
       clearClips();
       ship.mix = p >= 1 ? 1 : 0; camDirty = true;
-      if (p >= 1) { body.classList.remove('ship-locked', 'ship-opening'); ship.open = true; ship.vis = true; camGlide(HOME_Z, off.x, off.y, 1100, 450); chatWake(); }   // lingkaran selesai membuka di zoom 1, lalu otomatis zoom-in 1 langkah
+      if (p >= 1) { body.classList.remove('ship-locked', 'ship-opening'); ship.open = true; ship.vis = true; camGlide(HOME_Z, off.x, off.y, 1100, 450); chatWake(); clogBottom(); }   // lingkaran selesai membuka di zoom 1, lalu otomatis zoom-in 1 langkah
       else { body.classList.add('ship-locked'); body.classList.remove('ship-opening'); ship.open = false; ship.vis = false; }
     }
     function tick(now) {
@@ -3132,6 +3132,7 @@ void main(){
   vec2 s = vec2(fc.x - uRes.x * .5, (uRes.y - fc.y) - uRes.y * .5);
   vec2 p = (s - uCam) / (uZoom * uU);                            // satuan dunia (1 = 1% sisi pendek layar), +y ke bawah; laut menempel pada kapal
   float t = uTime;
+  float fp = 1. / (uZoom * uU * uScale);                         // lebar satu piksel kanvas dalam satuan dunia: makin zoom out makin besar. Detail yang lebih kecil dari ini diredam supaya tidak pecah / berkedip
 
   // air mengalir ke buritan (kapal melaju ke atas)
   {                                                              // di bawah dek: tertutup kapal (DOM), jadi lewati seluruh perhitungan air
@@ -3151,12 +3152,13 @@ void main(){
   vec3 fcol  = mix(vec3(.94, .985, .98), vec3(.55, .72, .76), uDark);
   float body = fbm(q * .085 + 3.1);
   vec3 col = mix(deep, mid, smoothstep(.28, .62, body));
-  col *= .93 + .14 * fbm(q * .55);                                // bintik halus
+  col *= .93 + .14 * mix(fbm(q * .55), .5, smoothstep(.22, .6, fp));   // bintik halus (memudar ke rata saat zoom out)
 
   // urat air (retakan terang tipis), kuat-lemahnya berbeda-beda per daerah
   float patch = smoothstep(.30, .78, fbm(q * .10 + 21.));
   vec2 w1 = vec2(fbm(q * .26), fbm(q * .26 + 4.7)) - .5;          // lekukan: garis urat tidak lurus, bercabang seperti marmer
-  float v1 = 1. - smoothstep(0., .060, vein((q + w1 * 4.2) / 7.5, t * .30));
+  float vw = max(.060, fp * 1.5 / 7.5);                            // garis urat tidak pernah lebih tipis dari ~1,5 piksel (anti pecah saat zoom out); makin lebar makin pudar supaya total terangnya tetap
+  float v1 = (1. - smoothstep(0., vw, vein((q + w1 * 4.2) / 7.5, t * .30))) * (.060 / vw);
   // urat air: hanya satu lapis (urat besar) dan lebih tipis / lebih jarang; lapis kedua (urat halus) dihapus: laut lebih bersih dan GPU jauh lebih ringan
   float veins = clamp(v1 * (.05 + .55 * patch), 0., 1.);
   col = mix(col, vcol, veins * .50);
@@ -3170,7 +3172,7 @@ void main(){
   vec3 L = normalize(vec3(-.45, .55, .70));
   col *= .92 + .16 * clamp(dot(n, L), 0., 1.);
   float spec = pow(max(dot(n, normalize(L + vec3(0., 0., 1.))), 0.), 160.);
-  col += spec * mix(.26, .06, uDark) * vec3(1., 1., .94);
+  col += spec * (1. - smoothstep(.25, .7, fp)) * mix(.26, .06, uDark) * vec3(1., 1., .94);   // kilau memudar saat zoom out (titik sekecil piksel berkedip)
 
   // ---- kapal membelah air: garis air tipis + gelombang haluan yang mengikuti lambung ----
   // Ringan: tanpa fbm, hanya sin() + satu pembacaan tekstur. Tidak ada buih berserabut di sepanjang lambung lagi.
@@ -3196,15 +3198,19 @@ void main(){
   float u = max(p.y - 13.4, 0.);                                 // jarak ke buritan dihitung dari titik terlebar lambung (sh = .6)
   float xa = hullHW(min(shc, .6)) + .30 * (sqrt(u * u + 3600.) - 60.);   // garis tengah lengan: kemiringan 0 di awal, melengkung sangat pelan ke asimtot .30
   float fade = exp(-u / 100.) * smoothstep(260., 60., u);         // lengan sedikit lebih pendek: memudar lebih cepat dan habis sebelum ~260 satuan
-  float nzA = fbm(vec2(flow * .03, abs(p.x) * .03 + 3.));        // variasi sangat pelan sepanjang lengan
-  float nzC = fbm(vec2(p.x * .10, flow * .02 + 9.));             // variasi pelan di tengah V
   float wd = 1.8 + u * .03;                                      // lengan melebar dan melembut ke belakang
   float dE = abs(p.x) - xa - (sin(flow * .11) * .6 + sin(flow * .29 + 1.) * .3) * (.4 + u * .01);   // goyangan tepi pelan dan halus
-  float arm = exp(-dE * dE / (2. * wd * wd)) + .35 * exp(-dE * dE / (2. * wd * wd * 7.));         // inti + halo lembut
-  arm *= fade * (.82 + .36 * nzA) * smoothstep(.0, .1, sh);
-  float inV = smoothstep(3., -10., dE);                          // di dalam V (antara lambung dan lengan)
-  float wash = inV * smoothstep(.55, .72, shc) * exp(-u / 48.) * smoothstep(170., 20., u) * (.6 + .5 * nzC);   // air putih bekas baling-baling: tebal di buritan, menipis mulus
-  float fill = clamp(wash, 0., 1.);
+  float arm = 0., fill = 0.;
+  // jejak hanya dihitung di dekat kapal / lengannya (di depan haluan, jauh ke samping, atau jauh di belakang nilainya nol): melewati 2 fbm + beberapa exp untuk sebagian besar piksel
+  if (sh > 0. && u < 262. && dE < max(3., 10. * wd)) {
+    float nzA = fbm(vec2(flow * .03, abs(p.x) * .03 + 3.));      // variasi sangat pelan sepanjang lengan
+    float nzC = fbm(vec2(p.x * .10, flow * .02 + 9.));           // variasi pelan di tengah V
+    arm = exp(-dE * dE / (2. * wd * wd)) + .35 * exp(-dE * dE / (2. * wd * wd * 7.));         // inti + halo lembut
+    arm *= fade * (.82 + .36 * nzA) * smoothstep(.0, .1, sh);
+    float inV = smoothstep(3., -10., dE);                        // di dalam V (antara lambung dan lengan)
+    float wash = inV * smoothstep(.55, .72, shc) * exp(-u / 48.) * smoothstep(170., 20., u) * (.6 + .5 * nzC);   // air putih bekas baling-baling: tebal di buritan, menipis mulus
+    fill = clamp(wash, 0., 1.);
+  }
 
   float foam = clamp(side + arm * 1.0 + fill * .75, 0., 1.);
   foam = clamp(foam + smoothstep(1.8, 0., d) * .35, 0., 1.);     // tepi lambung hampir selalu putih
@@ -3249,7 +3255,7 @@ void main(){
     }
 
     // resolusi laut TETAP dan sama di semua perangkat (PC, HP, tablet): tidak ada penurunan otomatis, tidak ada batas anggaran piksel, tidak ada lompat frame.
-    const SEA_DPR = 1.5;          // satu-satunya pengatur ketajaman: kerapatan piksel kanvas laut (sama di semua perangkat)
+    const SEA_DPR = matchMedia('(pointer: coarse)').matches ? 1.25 : 1.5;   // satu-satunya pengatur ketajaman: kerapatan piksel kanvas laut. HP (layar sentuh) 1.0: piksel ~30% lebih sedikit dari 1.5 (1.0 terlalu kotak saat zoom out); detail halus diredam di shader saat zoom out (lihat fp)
     let W = 0, H = 0, sc = 1;
     function apply() {
       const cw = Math.max(2, Math.round(W * sc)), ch = Math.max(2, Math.round(H * sc));
@@ -3270,7 +3276,7 @@ void main(){
     try { darkQ.addEventListener('change', (e) => { sysDark = e.matches; }); } catch (e) { darkQ.addListener && darkQ.addListener((ev) => { sysDark = ev.matches; }); }
     const isDark = () => { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : sysDark; };
     let dark = isDark() ? 1 : 0, last = performance.now(), vt = 0;
-    let scOn = false, cx0 = NaN, cy0 = NaN, cz0 = NaN, skip = false;
+    let scOn = false;
     function frame(now) {
       const dt = Math.min(0.05, (now - last) / 1000); last = now;
       if (!ship.vis) { requestAnimationFrame(frame); return; }   // kapal tertutup: laut tidak digambar sama sekali (hemat GPU)
@@ -3278,12 +3284,7 @@ void main(){
       if (seaSkip) { requestAnimationFrame(frame); return; }         // GPU masih sibuk dengan frame laut sebelumnya
       if (window.__theming) dark = isDark() ? 1 : 0;                 // ganti tema: warna laut langsung benar
       else dark += ((isDark() ? 1 : 0) - dark) * Math.min(1, dt * 4);
-      // kamera diam: aliran air pelan, cukup digambar tiap 2 frame (30 fps). GPU lega jadi tidak ada antrean yang menumpuk saat jari mulai menyentuh; kamera bergerak / dunia membuka = tiap frame. Berlaku sama di semua perangkat.
-      {
-        const still = cam.x === cx0 && cam.y === cy0 && cam.z === cz0 && !ship.clip;
-        cx0 = cam.x; cy0 = cam.y; cz0 = cam.z;
-        if (still) { skip = !skip; if (skip) { requestAnimationFrame(frame); return; } } else skip = false;
-      }
+      // laut digambar tiap frame (60 fps) walau kamera diam: 30 fps terlihat patah-patah. Antrean GPU tetap dijaga fence (seaBusy), jadi HP lemah menurunkan frame, bukan menumpuk antrean.
       // dunia sedang membuka / menutup: hanya gambar kotak yang membungkus lingkaran yang terlihat (awal animasi = area kecil)
       const cl = ship.clip;
       if (cl) {
