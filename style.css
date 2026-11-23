@@ -234,7 +234,7 @@ body.glow-on .l-glow { opacity: 1; }
   border: 0; border-radius: 50%;
   background: hsl(var(--h) 55% 62%);
   color: #fff; font-weight: 600; font-size: 14px;
-  box-shadow: 0 2px 8px rgba(0,0,0,.18);
+  box-shadow: none;
   transition: box-shadow .12s linear;
   animation: pop .65s cubic-bezier(.3,1.5,.5,1) calc(.5s + var(--i, 0) * .07s) backwards;
 }
@@ -245,12 +245,12 @@ button.avatar { cursor: pointer; }
 .seat.on .avatar ~ .eq { display: none; }
 .seat .avatar ~ .name { top: calc(100% + var(--sw) * .95); }
 .avatar .ins { position: absolute; left: 50%; top: 50%; width: calc(var(--sw) * 2.7); aspect-ratio: 1; translate: -50% -50%; display: block; }
-.avatar .ins::before { content: ''; position: absolute; left: 50%; top: 50%; width: 58%; aspect-ratio: 1; translate: -50% -50%; border-radius: 50%; background: hsl(var(--h) 60% 62%); box-shadow: 0 2px 8px rgba(0,0,0,.18); }
+.avatar .ins::before { content: ''; position: absolute; left: 50%; top: 50%; width: 58%; aspect-ratio: 1; translate: -50% -50%; border-radius: 50%; background: hsl(var(--h) 60% 62%); box-shadow: none; }
 .seat.me .ins::before { outline: 2px solid var(--ink); outline-offset: 3px; }
-.seat.me.on .ins::before { box-shadow: 0 0 0 calc(3px + var(--level, 0) * 12px) hsl(var(--h) 60% 60% / .22), 0 2px 8px rgba(0,0,0,.18); }
-.avatar .ini { position: absolute; left: calc(50% - var(--sw) * .95); top: calc(50% + var(--sw) * .25); min-width: 15px; height: 15px; padding: 0 4px; display: grid; place-items: center; border-radius: 8px; font-size: 9px; font-weight: 700; line-height: 1; background: hsl(var(--h) 55% 42%); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.seat.me.on .ins::before { box-shadow: 0 0 0 calc(3px + var(--level, 0) * 12px) hsl(var(--h) 60% 60% / .22); }
+.avatar .ini { position: absolute; left: calc(50% - var(--sw) * .95); top: calc(50% + var(--sw) * .25); min-width: 15px; height: 15px; padding: 0 4px; display: grid; place-items: center; border-radius: 8px; font-size: 9px; font-weight: 700; line-height: 1; background: hsl(var(--h) 55% 42%); color: #fff; box-shadow: none; }
 .seat.empty .avatar .ini { display: none; }
-.avatar .ins svg { position: relative; width: 100%; height: 100%; display: block; overflow: visible; filter: drop-shadow(0 2px 3px rgba(0,0,0,.18)); }
+.avatar .ins svg { position: relative; width: 100%; height: 100%; display: block; overflow: visible; filter: none; }
 .seat.empty .avatar .ins { display: none; }
 .avatar .d { transform-box: fill-box; transform-origin: 50% 50%; }
 /* saat lagu diputar: lingkarannya loncat memukul drum satu per satu, drum yang kena berdenyut / cymbal bergoyang */
@@ -332,7 +332,7 @@ button.avatar { cursor: pointer; }
 .seat.empty .avatar { background: transparent; border: 1.5px dashed var(--dash); box-shadow: none; }
 .seat.me .avatar { outline: 1.5px solid var(--ink); outline-offset: 4px; }
 .seat.me.on .avatar {
-  box-shadow: 0 0 0 calc(3px + var(--level) * 12px) hsl(var(--h) 60% 60% / .22), 0 2px 8px rgba(0,0,0,.18);
+  box-shadow: 0 0 0 calc(3px + var(--level) * 12px) hsl(var(--h) 60% 60% / .22);
 }
 .seat.me.on .avatar::after {
   content: ""; position: absolute; inset: 0; border-radius: 50%;
@@ -352,7 +352,7 @@ button.avatar { cursor: pointer; }
   display: none;
   position: absolute; right: -3px; bottom: -3px;
   align-items: flex-end; gap: 1.5px; height: 14px; padding: 3px 4px;
-  background: var(--card); border-radius: 7px; box-shadow: 0 1px 3px rgba(0,0,0,.28);
+  background: var(--card); border-radius: 7px; box-shadow: none;
 }
 .seat.on .eq { display: flex; }
 .eq i { width: 2px; height: 100%; background: var(--red); transform-origin: bottom; animation: eq .9s infinite ease-in-out; }
@@ -385,8 +385,7 @@ button.avatar { cursor: pointer; }
 .plate-sh {
   z-index: -2;
   box-shadow:
-    0 2cqw 5cqw var(--plate-sh),
-    0 .3cqw .8cqw rgba(0,0,0,.10);
+    none;
 }
 .plate-bg {
   z-index: -1;
@@ -414,7 +413,7 @@ button.avatar { cursor: pointer; }
   -webkit-mask: var(--hole-mask); mask: var(--hole-mask);
 }
 .platter { --hole-mask: radial-gradient(circle at 50% 50%, transparent 0 var(--hole), #000 calc(var(--hole) + .5px)); }
-.platter::before { content: ""; position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 .6cqw 1.6cqw rgba(0,0,0,.25), 0 0 0 .8cqw #262626; }
+.platter::before { content: ""; position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 0 0 .8cqw #262626; }
 .record-fix { position: absolute; inset: 0; border-radius: 50%; pointer-events: none; }   /* label diam: hanya gir di dalamnya yang bergerak */
 .record-fix .ring { position: absolute; left: 32%; top: 32%; width: 36%; height: 36%; border-radius: 50%; background: #2a2a2e; -webkit-mask: var(--hole-mask); mask: var(--hole-mask); }
 .record-fix .label { position: absolute; left: 36%; top: 36%; width: 28%; height: 28%; border-radius: 50%; background: transparent; }
@@ -430,7 +429,7 @@ button.avatar { cursor: pointer; }
 .arm-base {
   position: absolute; left: calc(88% - 5cqw); top: calc(21% - 5cqw);
   width: 10cqw; height: 10cqw; border-radius: 50%; background: #fff; z-index: 2;
-  box-shadow: 0 .4cqw 1.2cqw rgba(0,0,0,.18), inset 0 0 0 .25cqw #e4e4e0;
+  box-shadow: inset 0 0 0 .25cqw #e4e4e0;
 }
 .arm-base::after { content: ""; position: absolute; inset: 26%; border-radius: 50%; background: linear-gradient(145deg, #f6f6f6, #959595); }
 .tonearm {
@@ -438,7 +437,7 @@ button.avatar { cursor: pointer; }
   width: 2.2cqw; height: 52%;
   transform-origin: 50% 0; transform: rotate(0deg);
   transition: transform 1s cubic-bezier(.3,1.35,.5,1);
-  filter: drop-shadow(0 1cqw 1cqw rgba(0,0,0,.18));
+  filter: none;
   z-index: 3;
 }
 body:not(.is-playing) .tonearm { transition: transform .8s cubic-bezier(.45,0,.2,1); }
@@ -644,7 +643,7 @@ body.dragging .drop { display: grid; }
   border-radius: 12px; background: var(--card); color: var(--ink);
   border: 2px solid hsl(var(--h, 200) 60% 58%);
   font-size: 12px; line-height: 1.3; font-weight: 500; text-align: center; overflow-wrap: anywhere;
-  box-shadow: 0 3px 10px rgba(0,0,0,.16);
+  box-shadow: none;
   opacity: 0; transform: translateY(6px) scale(.85); transform-origin: 50% 100%;
   transition: opacity .3s, transform .35s cubic-bezier(.3,1.5,.5,1);
 }
@@ -670,7 +669,7 @@ body.dragging .drop { display: grid; }
 .chatbar input {
   width: 100%; box-sizing: border-box; padding: 11px 18px; border-radius: 999px;
   border: 1px solid var(--line); background: var(--card); color: var(--ink);
-  font: inherit; font-size: 16px; outline: none; box-shadow: 0 6px 24px rgba(0,0,0,.18);
+  font: inherit; font-size: 16px; outline: none; box-shadow: none;
 }
 .chatbar input:focus { border-color: var(--ink); }
 
@@ -690,7 +689,7 @@ body:not(.ship-locked) .chatlog { display: flex; animation: clogIn .45s .35s cub
 @keyframes clogIn { from { opacity: 0; transform: translate3d(-10px, 0, 0); } }
 .cl-list {
   position: relative; overflow-y: auto; overscroll-behavior: contain; padding: 7px 10px; border-radius: 10px;
-  background: rgba(8, 20, 26, .30); text-shadow: 0 1px 2px rgba(0, 0, 0, .75); scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.35) transparent;
+  background: rgba(8, 20, 26, .30); text-shadow: 0 1px 0 rgba(0, 0, 0, .75); scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.35) transparent;
   transition: background .25s;
 }
 .cl-list:empty { display: none; }
@@ -703,7 +702,7 @@ body:not(.ship-locked) .chatlog { display: flex; animation: clogIn .45s .35s cub
 .cl-form { margin: 0; }
 .cl-form input {
   width: 100%; box-sizing: border-box; padding: 8px 12px; border-radius: 10px; border: 1px solid transparent;
-  background: rgba(8, 20, 26, .40); color: #fff; font: inherit; outline: none; text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: background .2s, border-color .2s;
+  background: rgba(8, 20, 26, .40); color: #fff; font: inherit; outline: none; text-shadow: 0 1px 0 rgba(0,0,0,.6); transition: background .2s, border-color .2s;
 }
 .cl-form input::placeholder { color: rgba(255,255,255,.68); }
 .cl-form input:focus { background: rgba(8, 20, 26, .68); border-color: rgba(255,255,255,.45); }
@@ -755,7 +754,7 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 .giftmenu {
   position: fixed; z-index: 70; padding: 9px 10px 10px; border-radius: 14px;
   background: var(--card); color: var(--ink); border: 2px solid hsl(var(--h, 200) 60% 58%);
-  box-shadow: 0 3px 10px rgba(0,0,0,.16);
+  box-shadow: none;
   opacity: 0; transform: translateY(6px) scale(.88); transform-origin: var(--tx, 50%) 100%;
   transition: opacity .25s, transform .35s cubic-bezier(.3,1.5,.5,1);
 }
@@ -878,7 +877,7 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
   position: fixed; z-index: 70; top: 52px; left: 12px;
   width: min(300px, calc(100vw - 24px)); box-sizing: border-box; padding: 12px 14px 14px; margin: 0;
   border-radius: 16px; background: var(--card); color: var(--ink); border: 1px solid var(--line);
-  box-shadow: 0 10px 34px rgba(0,0,0,.22);
+  box-shadow: none;
   opacity: 0; transform: translateY(-6px) scale(.96);
   transition: opacity .2s, transform .3s cubic-bezier(.3,1.5,.5,1);
 }
@@ -911,7 +910,7 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 .sp-card {
   position: relative; width: min(460px, 100%); min-width: 0; height: min(600px, calc(100dvh - 32px)); display: flex; flex-direction: column; box-sizing: border-box;
   padding: 16px 16px 14px; border-radius: 22px; background: var(--card); color: var(--ink); border: 1px solid var(--line);
-  box-shadow: 0 16px 50px rgba(0,0,0,.3); opacity: 0; transform: translateY(14px) scale(.97);
+  box-shadow: none; opacity: 0; transform: translateY(14px) scale(.97);
   transition: opacity .2s, transform .3s cubic-bezier(.3,1.4,.5,1);
 }
 .songpanel.show .sp-back { opacity: 1; }
@@ -927,7 +926,7 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 .sp-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin-bottom: 12px; border-radius: 14px; background: var(--soft); }
 .sp-tab { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding: 0 12px; border: 0; border-radius: 10px; background: transparent; color: var(--mute); font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer; transition: background .15s, color .15s; }
 .sp-tab:hover { color: var(--ink); }
-.sp-tab.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 0 0 1px var(--line); }
+.sp-tab.on { background: var(--card); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
 .sp-tab svg { color: #e5483b; }
 .sp-count { min-width: 20px; padding: 1px 6px; border-radius: 999px; background: var(--line); color: var(--ink); font-size: 11px; font-weight: 600; line-height: 1.5; text-align: center; font-variant-numeric: tabular-nums; }
 .sp-tab:focus-visible, .sp-btn:focus-visible, .sp-x:focus-visible, .yt-item:focus-visible, .sp-play:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
@@ -1105,7 +1104,7 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
 @media (prefers-reduced-motion: reduce) { .sky { display: none; } }
 
 /* nama di atas papan dek harus terbaca */
-body:not(.ship-locked) .seat .name { color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.75), 0 0 2px rgba(0,0,0,.6); }   /* hanya saat laut terbuka */
+body:not(.ship-locked) .seat .name { color: #fff; text-shadow: 0 1px 0 rgba(0,0,0,.75), 0 0 0 rgba(0,0,0,.6); }   /* hanya saat laut terbuka */
 
 /* =====================================================================
    Gerbang kapal: lobby polos dulu (latar lama + jam + kursi); kapal, laut, layar, dan camar tersembunyi di balik lingkaran radius 0
@@ -1123,7 +1122,7 @@ body .shipclip.reveal-on .shipin { inset: auto; left: 0; top: 0; width: var(--vw
   position: absolute; left: 0; top: 0; z-index: 1; will-change: transform, opacity;
   width: 0; height: 0; border-radius: 50%; opacity: 0; pointer-events: none;
   border: 2px solid hsl(var(--mh) 85% 72% / .9);
-  box-shadow: 0 0 30px 6px hsl(var(--mh) 85% 66% / .45), inset 0 0 34px 6px hsl(var(--mh) 85% 72% / .28);
+  box-shadow: none;
 }
 
 /* ---------- wadah latar: layar penuh, DI BELAKANG lobby (di atas .bg, di bawah .app) ---------- */
@@ -1157,7 +1156,7 @@ body.cam-live .stage { backface-visibility: hidden; }
 .zoomctl button {
   width: 38px; height: 38px; display: grid; place-items: center; padding: 0;
   border: 1px solid var(--line); background: var(--soft); border-radius: 50%;
-  box-shadow: 0 2px 10px rgba(0,0,0,.18);
+  box-shadow: none;
   transition: transform .2s, background .3s;
 }
 .zoomctl button:hover { transform: scale(1.1); }
@@ -1180,3 +1179,6 @@ body:not(.ship-locked):not(.ship-opening) .bg { visibility: hidden; animation-pl
 
 .theming *, .theming *::before, .theming *::after { transition: none !important; }
 
+
+/* panggung di luar layar: hentikan semua animasi CSS di dalamnya (tidak ada yang melihat) */
+body.stage-off .stage, body.stage-off .stage *, body.stage-off .stage *::before, body.stage-off .stage *::after { animation-play-state: paused !important; }
