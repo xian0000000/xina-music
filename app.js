@@ -493,6 +493,7 @@
   /* ---------- jam besar: waktu asli saat diam, ngebut kayak time traveler saat lagu diputar ---------- */
   const hHour = $('#hHour'), hMin = $('#hMin'), hSec = $('#hSec');
   // pos tampilan = waktu asli + extra (jarak yang sudah "ditempuh" ke depan, tidak dibungkus) + tick (loncat kecil saat menit ganti)
+  let clockOff = false;                                 // true = jam sudah hilang di mode kapal: tidak dihitung / digambar sama sekali
   const CLK = { extra: 0, vel: 0, acc: 0, hold: 0, tick: 0, last: -1, drawn: -1, real: 0, gdrawn: NaN };   // satuan: menit; vel = menit per detik
   const GEAR_PER_SEC = 0.5;                            // derajat putaran gir per derajat jarum detik (waktu asli): ~3 derajat tiap detik
   const GEAR_T0 = Date.now();                          // titik nol putaran gir
@@ -904,7 +905,8 @@
       || Math.abs(SEC.count * 6 - SEC.x) > 0.02 || Math.abs(SEC.v) > 0.05
       || new Date().getSeconds() !== SEC.last || realMin() !== CLK.last;
     const clkGap = clkBusy ? 0 : 1 / 10;
-    if (clkAcc >= clkGap - 0.002) { stepClock(Math.min(0.1, clkAcc), playing && !calm); clkAcc = 0; }
+    if (clockOff) { clkAcc = 0; SEC.last = -1; CLK.last = -1; }   // jam tersembunyi: lewati semua hitungan (jarum detik dan menit disinkronkan lagi saat jam muncul)
+    else if (clkAcc >= clkGap - 0.002) { stepClock(Math.min(0.1, clkAcc), playing && !calm); clkAcc = 0; }
 
     requestAnimationFrame(frame);
   }
@@ -2758,6 +2760,7 @@
   let camFling = null;                                               // luncuran setelah jari dilepas: { vx, vy } (px / detik)
   const camV = { z: 0, x: 0, y: 0 };                                 // kecepatan pegas: ln(zoom) / detik, px / detik
   const camHist = [];                                                // jejak jari terakhir untuk menghitung kecepatan luncur
+  let camMovedAt = -1e9;                                             // kapan kamera terakhir bergerak / disentuh (laut turun resolusi sebentar selama zoom supaya mulus)
   let camLive = false, camActiveAt = 0, camReliveAt = 0, camZ0 = 1;   // layer GPU kamera: dipasang selama dunia kapal terlihat, dirombak sekali tiap zoom selesai supaya tajam
   const setLive = (on) => { if (camLive === on) return; camLive = on; document.body.classList.toggle('cam-live', on); if (on) camZ0 = cam.z; };
   let camRect = { w: 1, h: 1, u: 1 };
@@ -2778,8 +2781,7 @@
   function camClamp(o) {
     const u = camRect.u;
     o.z = Math.min(CAM_MAX, Math.max(CAM_MIN, o.z));
-    const mx = 48 * u * o.z, my = 88 * u * o.z;                     // batas geser: kapal (dan layarnya) tidak boleh hilang dari layar
-    o.x = off.x + Math.min(mx, Math.max(-mx, o.x - off.x)); o.y = off.y + Math.min(my, Math.max(-my, o.y - off.y));
+    o.x = off.x; o.y = off.y;                                       // tidak bisa digeser: kamera selalu terkunci di pusat dek, hanya zoom yang boleh
   }
   function camApply() {
     camClamp(cam);
@@ -2836,6 +2838,7 @@
     // layer GPU: aktif selama dunia kapal terlihat; saat zoom sudah berubah dan kamera diam sebentar, dilepas lalu dipasang lagi supaya digambar ulang tajam di ukuran akhir
     const active = moving || camPan || camPtr.size > 0 || (ship.vis && !ship.open);
     if (active) camActiveAt = now;
+    if (moving || camPtr.size > 0) camMovedAt = now;
     if (!ship.vis) { setLive(false); camReliveAt = 0; }
     else if (camLive) {
       if (!active && ship.open && now - camActiveAt > 600 && Math.abs(Math.log(cam.z / camZ0)) > 0.22) { setLive(false); camReliveAt = now + 110; }
@@ -2867,7 +2870,7 @@
     if (rm()) { cam.z = tgt.z; cam.x = tgt.x; cam.y = tgt.y; camV.z = camV.x = camV.y = 0; camBusy = false; camDirty = true; return; }
     camT = ms > 300 ? .2 : .15; camBusy = true;
   }
-  const camStep = (f) => camZoomSmooth(tgt.z * f, 0, 0, .16);       // tombol + / -: zoom ke tengah layar
+  const camStep = (f) => camZoomSmooth(tgt.z * f, off.x, off.y, .16);   // tombol + / -: zoom ke pusat dek
   const HOME_Z = 1.4;                                                // zoom awal / tombol fokus = 1 langkah zoom-in (zoom 1 terasa kekecilan)
   function camGlide(z, x, y, d, delay) {
     if (rm()) { camTo(z, x, y); return; }
@@ -2884,13 +2887,16 @@
   // permukaan yang boleh digeser / di-zoom: laut dan dek kosong. Jam, kursi, pemutar, tombol, dan panel tetap berfungsi seperti biasa.
   const camSurface = (t) => !!t && t.nodeType === 1 && (t === document.body || t === document.documentElement || t === appEl || el.stage.contains(t))
     && !t.closest('.turntable, .seat, .knob, button, input, textarea, select, a, label, .top, [role="dialog"]');
+  // zoom bawaan browser (ctrl + roda, ctrl +/-/0, cubit di Safari) dimatikan total: lobby / mode jam tidak bisa di-zoom, mode kapal hanya zoom kapal
+  document.addEventListener('wheel', (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false, capture: true });
+  document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && ['+', '=', '-', '_', '0'].includes(e.key)) e.preventDefault(); }, true);
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault(), { passive: false }));
   document.addEventListener('wheel', (e) => {
-    if (e.defaultPrevented || !ship.open || !camSurface(e.target)) return;
+    if ((e.defaultPrevented && !e.ctrlKey) || !ship.open || !camSurface(e.target)) return;      // ctrl + roda (cubit trackpad) sudah di-preventDefault di atas, tapi tetap zoom kapal
     e.preventDefault();
-    const c = bCenter();
     let d = e.deltaY; if (e.deltaMode === 1) d *= 16; else if (e.deltaMode === 2) d *= 100;
     d = Math.max(-240, Math.min(240, d));                            // satu hentakan roda tidak boleh melompat jauh
-    camZoomSmooth(tgt.z * Math.exp(-d * (e.ctrlKey ? 0.01 : 0.0018)), e.clientX - c.x, e.clientY - c.y, e.ctrlKey ? .08 : .12);
+    camZoomSmooth(tgt.z * Math.exp(-d * (e.ctrlKey ? 0.01 : 0.0018)), off.x, off.y, e.ctrlKey ? .08 : .12);   // zoom selalu ke pusat dek
   }, { passive: false });
   const pinchState = () => {
     const [p, q] = [...camPtr.values()];
@@ -2912,21 +2918,12 @@
     if (!p) return;
     if (camPtr.size >= 2) {
       p.x = e.clientX; p.y = e.clientY;
-      const n = pinchState(), c = bCenter();
-      if (camPinch) {
-        cam.x += n.mx - camPinch.mx; cam.y += n.my - camPinch.my;
-        camZoomNow(n.d / camPinch.d, n.mx - c.x, n.my - c.y);
-      }
+      const n = pinchState();
+      if (camPinch) camZoomNow(n.d / camPinch.d, off.x, off.y);        // cubit = zoom saja (tanpa geser), ke pusat dek
       camPinch = n;
       return;
     }
-    if (!camPan && Math.hypot(e.clientX - p.sx, e.clientY - p.sy) < PAN_SLOP) return;     // belum cukup jauh: masih dianggap ketukan
-    if (!camPan) { camPan = true; stopHold(); document.body.classList.add('panning'); }
-    cam.x += e.clientX - p.x; cam.y += e.clientY - p.y;
-    p.x = e.clientX; p.y = e.clientY;
-    camHist.push({ t: e.timeStamp, x: e.clientX, y: e.clientY });
-    while (camHist.length > 2 && e.timeStamp - camHist[0].t > 100) camHist.shift();
-    camSync();                                                       // digambar sekali per frame oleh camTick
+    p.x = e.clientX; p.y = e.clientY;                                // satu jari / mouse: tidak ada geseran kamera
   });
   const camUp = (e) => {
     if (!camPtr.delete(e.pointerId)) return;
@@ -2970,6 +2967,7 @@
     const DUR = 2200;
     const ease = (x) => (x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);      // pelan di gir, melaju, lalu mengendap
     let p = 0, target = 0, raf = 0, lastT = 0, Rm = 0;
+    let offT = 0;                                                                         // penunda: jam benar-benar berhenti dihitung setelah selesai memudar
     let closeFrom = null;                                                                 // kamera saat mulai menutup: zoom / posisi kembali ke dek MENGIKUTI lingkaran (satu kurva), bukan jalan sendiri
 
     // crossfade warna jam: salinan jam dengan warna lama memudar keluar, jam asli (warna baru) memudar masuk. Gir salinan ikut berputar (didaftarkan ke `gears`).
@@ -2987,9 +2985,7 @@
       endGhost();
       const g = sigilEl.cloneNode(true);
       g.classList.add('sg-ghost'); g.style.animation = ''; g.style.color = getComputedStyle(sigilEl).color;
-      const A = sigilEl.querySelectorAll('.sg-gear'), B = g.querySelectorAll('.sg-gear');
-      A.forEach((a, i) => { const o = gears.find((x) => x.el === a); if (o && B[i]) ghostGears.push({ el: B[i], k: o.k, r: o.r }); });
-      for (const gg of ghostGears) gears.push(gg);
+      g.querySelectorAll('.sg-hand, .sg-cap').forEach((n) => n.remove());                 // jarum hitam tidak berubah warna: salinan cukup dial + gir (diam, tidak ikut dihitung tiap frame)
       sigilEl.after(g); ghost = g;
       change();
       sigilEl.style.animation = ''; sigilEl.classList.add('fade-in');
@@ -3033,7 +3029,7 @@
       closeFrom = null;
       clearClips();
       ship.mix = p >= 1 ? 1 : 0; camDirty = true;
-      if (p >= 1) { body.classList.remove('ship-locked', 'ship-opening'); ship.open = true; ship.vis = true; camGlide(HOME_Z, off.x, off.y, 1100, 450); clogFit(); chatWake(); clogBottom(); }   // lingkaran selesai membuka di zoom 1, lalu otomatis zoom-in 1 langkah
+      if (p >= 1) { body.classList.remove('ship-locked', 'ship-opening'); body.classList.add('clock-gone'); clearTimeout(offT); offT = setTimeout(() => { if (body.classList.contains('clock-gone')) clockOff = true; }, 3000); ship.open = true; ship.vis = true; camGlide(HOME_Z, off.x, off.y, 1100, 450); clogFit(); chatWake(); clogBottom(); }   // lingkaran selesai membuka di zoom 1, lalu otomatis zoom-in 1 langkah
       else { body.classList.add('ship-locked'); body.classList.remove('ship-opening'); ship.open = false; ship.vis = false; }
     }
     function tick(now) {
@@ -3048,6 +3044,8 @@
       const t = open ? 1 : 0;
       if (target === t) return;
       target = t;
+      const wasGone = body.classList.contains('clock-gone');
+      clearTimeout(offT); clockOff = false; body.classList.remove('clock-gone');          // jam kembali dihitung dan terlihat (dimunculkan pelan-pelan di bawah)
       if (open) closeFrom = null;                                                         // dibuka lagi di tengah penutupan: kamera berhenti di posisi sekarang
       // jari-jari penuh = cukup untuk menutupi sudut layar terjauh dari pusat dek (memperhitungkan geseran kamera saat ini)
       Rm = Math.hypot(bdrop.clientWidth, bdrop.clientHeight) / 2 + Math.hypot(cam.x, cam.y) + 48;
@@ -3058,7 +3056,10 @@
       if (open) { paint(ease(p) * Rm); sigilFade(() => body.classList.add('ship-locked', 'ship-opening')); }
       else {
         paint(ease(p) * Rm);                                                              // pasang klip dulu, baru kunci: tidak ada kedipan satu frame
-        sigilFade(() => { body.classList.add('ship-locked'); body.classList.remove('ship-opening'); });
+        if (wasGone && sigilEl && !rm()) {                                                // jam sudah hilang: muncul pelan-pelan selama lingkaran menutup (hanya opacity, GPU)
+          endGhost(); body.classList.add('ship-locked'); body.classList.remove('ship-opening');
+          sigilEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: DUR * 0.9, delay: 200, easing: 'ease-in-out', fill: 'backwards' });
+        } else sigilFade(() => { body.classList.add('ship-locked'); body.classList.remove('ship-opening'); });
         camSync(); closeFrom = { z: cam.z, x: cam.x, y: cam.y };                          // kamera kembali ke dek (mengikuti lingkaran, lihat paint) supaya lobby polos tampil normal
       }
       if (rm()) { p = t; settle(); return; }                                              // "kurangi gerakan": langsung tanpa animasi
@@ -3245,9 +3246,9 @@ void main(){
 
     // resolusi laut TETAP dan sama di semua perangkat (PC, HP, tablet): tidak ada penurunan otomatis, tidak ada batas anggaran piksel, tidak ada lompat frame.
     const SEA_DPR = matchMedia('(pointer: coarse)').matches ? 1.25 : 1.5;   // satu-satunya pengatur ketajaman: kerapatan piksel kanvas laut. HP (layar sentuh) 1.0: piksel ~30% lebih sedikit dari 1.5 (1.0 terlalu kotak saat zoom out); detail halus diredam di shader saat zoom out (lihat fp)
-    let W = 0, H = 0, sc = 1;
+    let W = 0, H = 0, sc = 1, lite = 1;                              // lite < 1: resolusi laut diturunkan sementara selama lingkaran membuka / menutup (lebih ringan, hanya 2 detik)
     function apply() {
-      const cw = Math.max(2, Math.round(W * sc)), ch = Math.max(2, Math.round(H * sc));
+      const cw = Math.max(2, Math.round(W * sc * lite)), ch = Math.max(2, Math.round(H * sc * lite));
       if (cw === cv.width && ch === cv.height) return;               // ukuran sama: jangan alokasi ulang kanvas (mis. bar alamat HP bergeser sedikit)
       cv.width = cw; cv.height = ch;
       gl.viewport(0, 0, cv.width, cv.height);
@@ -3276,6 +3277,8 @@ void main(){
       // laut digambar tiap frame (60 fps) walau kamera diam: 30 fps terlihat patah-patah. Antrean GPU tetap dijaga fence (seaBusy), jadi HP lemah menurunkan frame, bukan menumpuk antrean.
       // dunia sedang membuka / menutup: hanya gambar kotak yang membungkus lingkaran yang terlihat (awal animasi = area kecil)
       const cl = ship.clip;
+      const wantLite = cl ? 0.7 : (now - camMovedAt < 260 ? 0.6 : 1);     // membuka / menutup 0,7; zoom 0,6 (+ jeda singkat setelah berhenti, supaya tidak bolak-balik)
+      if (lite !== wantLite) { lite = wantLite; apply(); }
       if (cl) {
         const k = cv.width / W, pad = 56, x0 = Math.max(0, Math.floor((cl.x - cl.r - pad) * k)), x1 = Math.min(cv.width, Math.ceil((cl.x + cl.r + pad) * k));
         const y0 = Math.max(0, Math.floor(cv.height - (cl.y + cl.r + pad) * k)), y1 = Math.min(cv.height, Math.ceil(cv.height - (cl.y - cl.r - pad) * k));
@@ -3284,7 +3287,7 @@ void main(){
       } else if (scOn) { gl.disable(gl.SCISSOR_TEST); scOn = false; }
       gl.uniform2f(U.uRes, W, H); gl.uniform2f(U.uCam, cam.x, cam.y);
       gl.uniform1f(U.uTime, vt); gl.uniform1f(U.uZoom, cam.z);
-      gl.uniform1f(U.uU, Math.min(W, H) / 100); gl.uniform1f(U.uDark, dark); gl.uniform1f(U.uScale, sc);
+      gl.uniform1f(U.uU, Math.min(W, H) / 100); gl.uniform1f(U.uDark, dark); gl.uniform1f(U.uScale, sc * lite);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       if (gl.__fence) gl.__fence();
       requestAnimationFrame(frame);

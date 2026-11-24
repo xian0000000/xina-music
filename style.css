@@ -1137,7 +1137,12 @@ body .shipclip.reveal-on .shipin { inset: auto; left: 0; top: 0; width: var(--vw
 @keyframes sgIn { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .l-sigil.sg-ghost { display: none; } }
 body:not(.ship-locked) .l-sigil, body.ship-opening .l-sigil { color: var(--engrave); }   /* jam jadi ukiran kuningan di papan dek saat dunia kapal terbuka; di lobby polos tetap warna biasa */
-body:not(.ship-locked) .app { touch-action: none; cursor: grab; }                          /* geser / cubit dipakai untuk kamera kapal */
+/* mode kapal: begitu jam sudah menempel di dek (animasi masuk kapal selesai), jam pelan-pelan menghilang. Hanya opacity (komposit GPU); setelah pudar, visibility hidden supaya tidak dikomposit lagi.
+   Jarum / gir tetap dihitung di app.js, jadi saat kapal menutup jam langsung muncul lagi di waktu yang benar. */
+body.clock-gone .l-sigil { opacity: 0; visibility: hidden; transition: opacity 2.4s ease .3s, visibility 0s 2.7s; }
+@media (prefers-reduced-motion: reduce) { body.clock-gone .l-sigil { transition: none; } }
+body.ship-locked .app { touch-action: pan-x pan-y; }                                    /* mode jam: cubit (zoom) dimatikan, scroll daftar tetap jalan */
+body:not(.ship-locked) .app { touch-action: none; }                                      /* cubit dipakai untuk zoom kapal (tanpa geser) */
 body.panning, body.panning .app { cursor: grabbing; }
 /* Selama kamera bergerak / lingkaran membuka, lobby dan dunia kapal dijadikan layer GPU sendiri: zoom dan geser cuma mengubah matriks,
    tidak ada raster ulang tiap frame. Begitu kamera diam, kelas dilepas supaya browser menggambar ulang sekali dengan tajam di ukuran akhir. */
