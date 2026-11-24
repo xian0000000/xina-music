@@ -6,7 +6,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
 
 concurrency:
   group: "pages"
@@ -14,6 +17,9 @@ concurrency:
 
 jobs:
   deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -31,14 +37,19 @@ jobs:
       - name: Siapkan folder publik
         run: |
           mkdir _site
-          cp index.html app.js style.css lame.min.js config.js manifest.webmanifest sw.js _site/
+          cp index.html app.js style.css lame.min.js config.js manifest.webmanifest sw.js ship-light.webp ship-dark.webp _site/
           cp -r icons _site/icons
           cp tick.wav _site/ 2>/dev/null || true
+          cp -r video _site/video 2>/dev/null || true
 
-      - name: Publish ke branch gh-pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./_site
-          publish_branch: gh-pages
-          force_orphan: true
+          path: '_site'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
