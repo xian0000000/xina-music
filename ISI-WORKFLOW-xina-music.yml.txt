@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
@@ -36,7 +37,7 @@ jobs:
       - name: Siapkan folder publik
         run: |
           mkdir _site
-          cp index.html app.js style.css lame.min.js config.js manifest.webmanifest sw.js _site/
+          cp index.html app.js style.css lame.min.js config.js manifest.webmanifest sw.js ship-light.webp ship-dark.webp _site/
           cp -r icons _site/icons
           cp tick.wav _site/ 2>/dev/null || true
 
@@ -50,4 +51,4 @@ jobs:
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@v4

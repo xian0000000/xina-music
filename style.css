@@ -191,6 +191,7 @@ h1 small { display: block; color: var(--mute); font-size: 12px; font-weight: 400
   opacity: 0; transition: opacity .9s ease;                                          /* padam saat lagu berhenti */
 }
 body.glow-on .l-glow { opacity: 1; }
+body:not(.ship-locked) .l-glow, body.ship-opening .l-glow { opacity: 0; }   /* mode kapal: glow pink di belakang alat dimatikan (memudar saat lingkaran membuka, muncul lagi saat kapal menutup) */
 .l-glow::before, .l-glow::after { content: ""; position: absolute; inset: 0; border-radius: 50%; }
 .l-glow::before { background: radial-gradient(closest-side, hsl(var(--mh) 85% 60% / .5) 0%, hsl(var(--mh) 85% 60% / .2) 55%, transparent 100%); opacity: var(--en); }
 .l-glow::after { background: radial-gradient(circle at 65% 40%, hsl(var(--mh2) 85% 62% / .3), transparent 50%); opacity: var(--hi); }
@@ -1080,6 +1081,12 @@ html.is-hidden *, html.is-hidden *::before, html.is-hidden *::after { animation-
   position: absolute; left: 50%; top: 50%; translate: -50% -50%;
   width: 62cqmin; height: 160cqmin; overflow: visible; display: block; pointer-events: none;
 }
+/* kapal = SATU gambar (WebP, tanpa ratusan elemen SVG): versi terang dan gelap, dipilih sesuai tema (sama seperti variabel warna di atas) */
+.ship { object-fit: fill; user-select: none; -webkit-user-drag: none; }
+.ship-dk { display: none; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ship-lt { display: none; } :root:not([data-theme="light"]) .ship-dk { display: block; } }
+:root[data-theme="dark"] .ship-lt { display: none; }
+:root[data-theme="dark"] .ship-dk { display: block; }
 .sh-lamp { transform-box: fill-box; transform-origin: center; }   /* animasi kedip dimatikan (hemat GPU) */
 @keyframes lamp { from { opacity: .55; transform: scale(.9); } to { opacity: 1; transform: scale(1.1); } }
 .ship-sails .sh-sail { transform-box: view-box; transform-origin: 310px 405px; }
