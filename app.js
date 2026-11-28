@@ -2103,7 +2103,7 @@
     }
   }
   const countMsg = () => { msgCount.textContent = Array.from(msgIn.value).length + '/' + MSG_MAX; };
-  const msgPop = makePopover(msgBtn, msgMenu, msgIn, () => { renderMsgs(); countMsg(); markMsgsSeen(); msgBtn.classList.remove('new'); });
+  const msgPop = makePopover(msgBtn, msgMenu, msgIn, () => { renderMsgs(); countMsg(); markMsgsSeen(); msgBtn.classList.remove('new'); pushRefresh(); });
   msgIn.addEventListener('input', countMsg);
   msgIn.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); msgMenu.requestSubmit(); } });
   msgMenu.addEventListener('submit', (e) => {
@@ -2118,7 +2118,7 @@
     // satu pesan per pengirim: disimpan di kunci tetap (msgKey), kirim lagi = teks lama ditimpa dan naik ke paling atas
     const old = msgs.raw.filter((m) => m.mine && m.id !== msgKey);       // sisa pesan lama (sebelum aturan satu pesan) ikut dibersihkan
     db.set(db.ref(rdb, 'lobby/messages/' + msgKey), { name: me.name, hue: me.hue, text, at: db.serverTimestamp(), k: msgKey })
-      .then(() => { old.forEach((m) => db.remove(db.ref(rdb, 'lobby/messages/' + m.id)).catch(() => {})); return trimMsgs(); })
+      .then(() => { pushNotify(text); old.forEach((m) => db.remove(db.ref(rdb, 'lobby/messages/' + m.id)).catch(() => {})); return trimMsgs(); })
       .catch(() => { msgs.sentAt = 0; setMsgHint('Gagal mengirim. Coba lagi.', true); });
     msgIn.value = ''; countMsg();                               // tampil langsung (Firebase menaruh tulisan lokal dulu), tidak menunggu server
   });
@@ -2151,6 +2151,71 @@
     });
   }
   refreshMsgBtn();
+
+  /* ---------- notifikasi pesan baru: Web Push lewat Worker (/push/*), jalan juga saat aplikasi ditutup. Butuh URL Worker + KV PUSH_KV (lihat worker.js) ---------- */
+  const pushBtn = $('#msgNotif');
+  const pushBase = () => {
+    let p = String(window.YT_WORKER || store.get('yt.proxy', store.get('proxy', '')) || '').trim();
+    if (!p) return '';
+    if (!/^https?:\/\//i.test(p)) p = 'https://' + p;
+    return p.replace(/[?#].*$/, '').replace(/\/+$/, '');
+  };
+  const pushIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const pushSupported = () => window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const pushU8 = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4)), (c) => c.charCodeAt(0));
+  const pushPost = (path, obj) => fetch(pushBase() + path, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(obj), keepalive: true }).then((r) => r.json());
+  const pushSub = () => navigator.serviceWorker.ready.then((reg) => reg.pushManager.getSubscription());
+  function pushNotify(text) {                                          // dipanggil setelah pesan berhasil tersimpan: Worker meneruskan ke perangkat lain
+    if (!pushBase()) return;
+    pushPost('/push/send', { k: msgKey, name: me.name, text }).catch(() => { /* abaikan */ });
+  }
+  async function pushRefresh() {
+    if (!pushBtn) return;
+    if (!pushBase()) { pushBtn.hidden = true; return; }
+    pushBtn.hidden = false;
+    if (!pushSupported()) { pushBtn.classList.remove('on'); pushBtn.textContent = pushIos() && !standalone() ? 'Notifikasi: install dulu ke Home Screen' : 'Notifikasi tidak didukung di browser ini'; return; }
+    let on = false;
+    try { on = Notification.permission === 'granted' && !!(await pushSub()); } catch (e) { /* abaikan */ }
+    pushBtn.classList.toggle('on', on);
+    pushBtn.textContent = on ? 'Notifikasi pesan aktif (ketuk untuk matikan)' : Notification.permission === 'denied' ? 'Notifikasi diblokir di pengaturan browser' : 'Aktifkan notifikasi pesan baru';
+  }
+  if (pushBtn) pushBtn.addEventListener('click', async () => {
+    if (!pushSupported()) { setMsgHint(pushIos() && !standalone() ? 'Di iPhone: pakai tombol Install (Bagikan > Tambah ke Layar Utama), lalu buka dari ikonnya' : 'Browser ini belum mendukung notifikasi', true); return; }
+    try {
+      const cur = await pushSub();
+      if (cur) {                                                       // sudah aktif: matikan
+        await cur.unsubscribe(); pushPost('/push/unsub', { endpoint: cur.endpoint }).catch(() => {});
+        store.set('push.on', '0');
+      } else {
+        if (Notification.permission === 'denied') { setMsgHint('Notifikasi diblokir. Izinkan dulu di pengaturan situs.', true); return; }
+        if (Notification.permission !== 'granted' && (await Notification.requestPermission()) !== 'granted') { setMsgHint('Izin notifikasi tidak diberikan', true); pushRefresh(); return; }
+        const kj = await fetch(pushBase() + '/push/key').then((r) => r.json());
+        if (!kj.ok) throw new Error(kj.error || 'Worker belum siap');
+        const reg = await navigator.serviceWorker.ready;
+        const s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: pushU8(kj.key) });
+        const j = s.toJSON(), r = await pushPost('/push/sub', { endpoint: j.endpoint, p: j.keys.p256dh, a: j.keys.auth, k: msgKey });
+        if (!r.ok) { await s.unsubscribe().catch(() => {}); throw new Error(r.error || 'gagal mendaftar'); }
+        store.set('push.on', '1'); store.set('push.ep', j.endpoint); store.set('push.at', String(Date.now()));
+        setMsgHint('Notifikasi aktif. Kamu akan diberi tahu saat ada pesan baru dari orang lain.', true);
+      }
+    } catch (e) { setMsgHint('Gagal: ' + String((e && e.message) || e).slice(0, 70), true); }
+    pushRefresh();
+  });
+  // perangkat yang sudah berlangganan mendaftar ulang tiap 7 hari (langganan di Worker kedaluwarsa 90 hari) atau saat alamat push berubah
+  setTimeout(async () => {
+    try {
+      if (!pushBase() || !pushSupported() || store.get('push.on', '0') !== '1' || Notification.permission !== 'granted') return;
+      const s = await pushSub();
+      if (!s) { store.set('push.on', '0'); return; }
+      if (store.get('push.ep', '') === s.endpoint && Date.now() - (parseFloat(store.get('push.at', '0')) || 0) < 7 * 86400000) return;
+      const j = s.toJSON(), r = await pushPost('/push/sub', { endpoint: j.endpoint, p: j.keys.p256dh, a: j.keys.auth, k: msgKey });
+      if (r.ok) { store.set('push.ep', j.endpoint); store.set('push.at', String(Date.now())); }
+    } catch (e) { /* abaikan */ }
+  }, 4000);
+  // ketuk notifikasi: buka papan pesan (aplikasi sudah terbuka lewat pesan dari service worker, atau baru dibuka lewat #pesan)
+  const openMsgsFromPush = () => { if (msgMenu.hidden) msgBtn.click(); };
+  if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'open-msgs') openMsgsFromPush(); });
+  if (location.hash === '#pesan') { history.replaceState(null, '', location.pathname + location.search); setTimeout(openMsgsFromPush, 1200); }
 
   /* ---------- install sebagai aplikasi (PWA): tombol install otomatis di Chrome/Edge/Android, petunjuk manual di iOS/Safari/Firefox ---------- */
   const installBtn = $('#installBtn'), installMenu = $('#installMenu'), installHelp = $('#installHelp'), installGo = $('#installGo');
@@ -2966,7 +3031,16 @@
     const body = document.body, ring = $('#shipRing'), seaEl = $('#shipclip'), inEl = $('#shipin');   // satu pembungkus bulat untuk laut + dunia kapal sekaligus
     const DUR = 2200;
     const ease = (x) => (x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);      // pelan di gir, melaju, lalu mengendap
-    let p = 0, target = 0, raf = 0, lastT = 0, Rm = 0;
+    let p = 0, target = 0, raf = 0, lastT = 0, Rm = 0, VW = 0, VH = 0;                 // VW / VH: ukuran layar dicache sekali per animasi (membaca clientWidth tiap frame memaksa layout ulang)
+    // gambar kapal 1550x4000 baru di-decode saat pertama tampil = macet di awal lingkaran. Di-decode lebih dulu saat idle, dan pembukaan menunggu decode selesai.
+    const shipImgs = [...document.querySelectorAll('.ship')];
+    let imgReady = false, imgWait = null;
+    const predecode = () => {
+      if (imgReady) return Promise.resolve();
+      if (!imgWait) imgWait = Promise.all(shipImgs.map((im) => (im.decode ? im.decode() : Promise.resolve()).catch(() => {}))).then(() => { imgReady = true; });
+      return imgWait;
+    };
+    (window.requestIdleCallback || ((f) => setTimeout(f, 1500)))(predecode, { timeout: 4000 });
     let offT = 0;                                                                         // penunda: jam benar-benar berhenti dihitung setelah selesai memudar
     let closeFrom = null;                                                                 // kamera saat mulai menutup: zoom / posisi kembali ke dek MENGIKUTI lingkaran (satu kurva), bukan jalan sendiri
 
@@ -2995,13 +3069,13 @@
     // r = jari-jari di layar (px). Pusat lingkaran = titik tengah dek di layar (tengah panggung + geseran kamera), jadi tetap pas walau kamera tidak di posisi awal.
     // Tidak ada clip-path / layout yang berubah per frame: pembungkus bulat berukuran tetap (2 x Rm) hanya di-translate + scale, isinya di-scale kebalikannya (lihat style.css, .reveal-on).
     function beginReveal() {
-      const W = bdrop.clientWidth, H = bdrop.clientHeight, st = seaEl.style;
+      const W = VW = bdrop.clientWidth, H = VH = bdrop.clientHeight, st = seaEl.style;
       st.setProperty('--rd', (2 * Rm).toFixed(1) + 'px'); st.setProperty('--vw', W + 'px'); st.setProperty('--vh', H + 'px');
       seaEl.classList.add('reveal-on');
       if (ring) { ring.style.width = ring.style.height = (2 * Rm).toFixed(1) + 'px'; ring.hidden = false; }
     }
     function paint(r) {
-      const W = bdrop.clientWidth, H = bdrop.clientHeight;
+      const W = VW, H = VH;
       if (closeFrom) {                                                                    // menutup: zoom + geser kamera ikut kurva lingkaran, jadi lobby mengecil lalu membesar mulus (tanpa denyut: dulu zoom turun duluan lalu lobby membesar)
         const k = ease(p);
         cam.z = 1 + (closeFrom.z - 1) * k; cam.x = off.x + (closeFrom.x - off.x) * k; cam.y = off.y + (closeFrom.y - off.y) * k;
@@ -3043,14 +3117,16 @@
     function go(open) {
       const t = open ? 1 : 0;
       if (target === t) return;
+      if (open && !imgReady && !rm()) { predecode().then(check); return; }                // kapal belum selesai di-decode: tunggu sebentar, lalu coba lagi
       target = t;
+      VW = bdrop.clientWidth; VH = bdrop.clientHeight;                                    // dibaca SEKALI sebelum ada yang ditulis
       const wasGone = body.classList.contains('clock-gone');
       clearTimeout(offT); clockOff = false; body.classList.remove('clock-gone');          // jam kembali dihitung dan terlihat (dimunculkan pelan-pelan di bawah)
       if (open) closeFrom = null;                                                         // dibuka lagi di tengah penutupan: kamera berhenti di posisi sekarang
       // jari-jari penuh = cukup untuk menutupi sudut layar terjauh dari pusat dek (memperhitungkan geseran kamera saat ini)
-      Rm = Math.hypot(bdrop.clientWidth, bdrop.clientHeight) / 2 + Math.hypot(cam.x, cam.y) + 48;
+      Rm = Math.hypot(VW, VH) / 2 + Math.hypot(cam.x, cam.y) + 48;
       ship.open = false; ship.vis = true;
-      ship.clip = { x: bdrop.clientWidth / 2 + cam.x, y: bdrop.clientHeight / 2 + cam.y, r: open ? 0 : Math.max(0, ease(p) * Rm) };
+      ship.clip = { x: VW / 2 + cam.x, y: VH / 2 + cam.y, r: open ? 0 : Math.max(0, ease(p) * Rm) };
       setLive(true);                                                                      // lobby + dunia kapal jadi layer GPU sebelum frame pertama animasi
       beginReveal();
       if (open) { paint(ease(p) * Rm); sigilFade(() => body.classList.add('ship-locked', 'ship-opening')); }
@@ -3246,7 +3322,7 @@ void main(){
 
     // resolusi laut TETAP dan sama di semua perangkat (PC, HP, tablet): tidak ada penurunan otomatis, tidak ada batas anggaran piksel, tidak ada lompat frame.
     const SEA_DPR = matchMedia('(pointer: coarse)').matches ? 1.25 : 1.5;   // satu-satunya pengatur ketajaman: kerapatan piksel kanvas laut. HP (layar sentuh) 1.0: piksel ~30% lebih sedikit dari 1.5 (1.0 terlalu kotak saat zoom out); detail halus diredam di shader saat zoom out (lihat fp)
-    let W = 0, H = 0, sc = 1, lite = 1;                              // lite < 1: resolusi laut diturunkan sementara selama lingkaran membuka / menutup (lebih ringan, hanya 2 detik)
+    let W = 0, H = 0, sc = 1, lite = 0.7;                              // lite < 1: resolusi laut diturunkan sementara selama lingkaran membuka / menutup (lebih ringan, hanya 2 detik)
     function apply() {
       const cw = Math.max(2, Math.round(W * sc * lite)), ch = Math.max(2, Math.round(H * sc * lite));
       if (cw === cv.width && ch === cv.height) return;               // ukuran sama: jangan alokasi ulang kanvas (mis. bar alamat HP bergeser sedikit)
@@ -3293,6 +3369,18 @@ void main(){
       requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
+    // pemanasan: driver baru benar-benar mengompilasi / menautkan shader saat draw pertama (bisa ratusan ms di HP). Lakukan sekali saat idle, di 1 piksel,
+    // jadi saat kapal membuka tidak ada kompilasi. Kanvas sudah berukuran 'lite' dari awal, jadi tidak ada alokasi ulang di awal animasi.
+    (window.requestIdleCallback || ((f) => setTimeout(f, 1200)))(() => {
+      try {
+        gl.enable(gl.SCISSOR_TEST); gl.scissor(0, 0, 1, 1);
+        gl.uniform2f(U.uRes, W, H); gl.uniform2f(U.uCam, 0, 0); gl.uniform1f(U.uTime, 0); gl.uniform1f(U.uZoom, 1);
+        gl.uniform1f(U.uU, Math.min(W, H) / 100); gl.uniform1f(U.uDark, 0); gl.uniform1f(U.uScale, sc * lite);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+        gl.disable(gl.SCISSOR_TEST);
+      } catch (e) { /* abaikan */ }
+    }, { timeout: 3000 });
   })();
 
 
